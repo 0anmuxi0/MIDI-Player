@@ -1,0 +1,1350 @@
+/* ==================== CSS变量定义 ==================== */
+:root {
+    /* 浅色主题 */
+    --bg-primary: #f5f5f5;
+    --bg-secondary: #fff;
+    --bg-hover: #e8e8e8;
+    --text-primary: #1a1a1a;
+    --text-secondary: #555;
+    --text-muted: #888;
+    --border-color: #ddd;
+    --accent: #667eea;
+    --accent-hover: #764ba2;
+    --canvas-bg: #fff;
+    --canvas-shadow: rgba(0, 0, 0, 0.15);
+
+    --upload-btn-bg: rgba(102, 126, 234, 0.1);
+    --upload-btn-border: rgba(102, 126, 234, 0.3);
+    --upload-btn-hover: rgba(102, 126, 234, 0.2);
+    --select-bg: rgba(102, 126, 234, 0.05);
+    --select-border: rgba(102, 126, 234, 0.2);
+    --select-text: #333;
+    --select-hover-bg: rgba(102, 126, 234, 0.1);
+    --slider-bg: rgba(102, 126, 234, 0.2);
+    --progress-bg: rgba(102, 126, 234, 0.2);
+    --switch-bg: rgba(102, 126, 234, 0.2);
+}
+
+/* ==================== 滚动条 ==================== */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #e8e8e8;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #bbb;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #999;
+}
+
+/* Firefox */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: #bbb #e8e8e8;
+}
+
+/* ==================== 基础样式 ==================== */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: 'Segoe UI', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* ==================== 全屏模式（pywebview + 浏览器） ==================== */
+
+/* pywebview 全屏 */
+body.pywebview-fullscreen {
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    background: #000 !important;
+    cursor: none !important;
+}
+body.pywebview-fullscreen * {
+    cursor: none !important;
+}
+body.pywebview-fullscreen .header,
+body.pywebview-fullscreen .bottom-controls,
+body.pywebview-fullscreen .status,
+body.pywebview-fullscreen .info,
+body.pywebview-fullscreen .track-panel {
+    display: none !important;
+}
+body.pywebview-fullscreen .canvas-wrapper {
+    width: 100vw !important;
+    height: 100vh !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+}
+body.pywebview-fullscreen .canvas-wrapper #canvas {
+    border-radius: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* 浏览器全屏 */
+body:has(.canvas-wrapper.fullscreen) {
+    cursor: none !important;
+}
+.canvas-wrapper.fullscreen,
+.canvas-wrapper.fullscreen * {
+    cursor: none !important;
+}
+.canvas-wrapper.fullscreen {
+    width: 100% !important;
+    max-width: none !important;
+    border-radius: 0 !important;
+}
+.canvas-wrapper.fullscreen #canvas {
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+/* 浏览器全屏时隐藏控制栏 */
+.canvas-wrapper.fullscreen ~ .bottom-controls,
+.canvas-wrapper.fullscreen ~ .status,
+.canvas-wrapper.fullscreen ~ .info,
+.canvas-wrapper.fullscreen ~ .track-panel {
+    display: none !important;
+}
+
+
+h1 {
+    font-size: 1.5rem;
+    font-weight: 300;
+    letter-spacing: 0.1em;
+    color: var(--text-primary);
+}
+/* ==================== 按钮样式 ==================== */
+button {
+    white-space: nowrap;
+    border-radius: 8px;
+    padding: 8px 20px;
+    font-family: inherit;
+    font-weight: 500;
+    font-size: 14px;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    /* 更顺滑的过渡曲线 */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background-color: var(--upload-btn-bg);
+    color: var(--text-primary);
+    border: 1px solid var(--upload-btn-border);
+}
+
+button:hover {
+    background-color: var(--upload-btn-hover);
+    transform: translateY(-1px);
+}
+
+button:active {
+    transform: translateY(1px);
+    /* 按下时下沉 */
+}
+
+/* 播放按钮专属高亮样式 */
+#playBtn {
+    white-space: nowrap;
+    background-color: var(--accent);
+    color: white;
+    border: none;
+    padding-left: 24px;
+    padding-right: 24px;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+}
+
+#playBtn:hover {
+    background-color: var(--accent-hover);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+}
+
+#playBtn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+#playBtn svg {
+    width: 16px;
+    height: 16px;
+    fill: white;
+}
+
+#fileInput {
+    display: none;
+}
+
+.upload-btn {
+    padding: 4px, 20px;
+    width: 200px;
+    background: var(--upload-btn-bg);
+    color: var(--text-primary);
+    border: 1px dashed var(--upload-btn-border);
+}
+
+.upload-btn:hover {
+    background: var(--upload-btn-hover);
+    border-color: var(--accent);
+}
+
+/* ==================== 控制区域样式 ==================== */
+.volume-control {
+    background: var(--bg-primary);
+    /* 与面板背景形成微弱对比 */
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text-secondary);
+    font-size: 14px;
+    white-space: nowrap;
+}
+
+.volume-control span {
+    font-size: 13px;
+    font-weight: bold;
+    color: var(--text-secondary);
+    min-width: 30px;
+}
+
+.select-label {
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
+/* 2. 现代滑动条 (Chrome/Safari/Edge) */
+input[type=range] {
+    width: 100%;
+    background: transparent;
+    cursor: pointer;
+}
+
+/* 滑块轨道 (Track) */
+input[type=range]::-webkit-slider-runnable-track {
+    width: 100%;
+    height: 4px;
+    /* 细长条更精致 */
+    background: var(--slider-bg);
+    border-radius: 2px;
+}
+
+/* 拖动圆点 (Thumb) */
+input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    height: 14px;
+    width: 14px;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-top: -5px;
+    /* (4/2 - 14/2) = -5 居中对齐 */
+    box-shadow: 0 0 10px rgba(102, 126, 234, 0.4);
+    transition: transform 0.2s;
+}
+
+input[type=range]:hover::-webkit-slider-thumb {
+    transform: scale(1.3);
+    /* 鼠标悬停变大反馈 */
+}
+
+/* 滑块样式 */
+.slider {
+    width: 100px;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--slider-bg);
+}
+
+.slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.slider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+#volumeValue {
+    min-width: 50px;
+}
+
+.volume-control .switch-container {
+    margin-left: auto;
+}
+
+/* ==================== 画布样式 ==================== */
+.canvas-wrapper {
+    width: 95%;
+    max-width: 1440px;
+    position: relative;
+    border-radius: 12px;
+}
+
+.canvas-fs-btn {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 3;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--bg-secondary) 86%, transparent);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    font-size: 16px;
+    line-height: 1;
+    backdrop-filter: blur(6px);
+}
+
+.canvas-fs-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+#canvas {
+    background: var(--canvas-bg);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px var(--canvas-shadow);
+    cursor: pointer;
+    display: block;
+    transition: background-color 0.3s ease, box-shadow 0.3s ease;
+    width: 100%;
+    max-width: none;
+}
+
+/* ==================== 底部信息 ==================== */
+.info {
+    margin-top: 15px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.status {
+    margin-top: 10px;
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+/* ==================== 底部控制栏 ==================== */
+
+
+/* 1. 底部面板卡片化 */
+.bottom-controls {
+    width: 95%;
+    max-width: 1440px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    /* 更圆润的转角 */
+    padding: 16px;
+    margin-top: 25px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+    display: flex;
+    align-items: stretch;
+    flex-direction: column;
+    gap: 20px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 进度条区域垂直对齐 */
+.progress-section {
+    display: grid;
+    grid-template-columns: auto auto auto 1fr auto auto;
+    align-items: center;
+    gap: 10px;
+    background: rgba(0, 0, 0, 0.15);
+    padding: 12px 18px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.progress-section .custom-select-wrapper {
+    width: 100%;
+}
+
+.progress-section .custom-select {
+    width: 100%;
+    min-height: 34px;
+    font-size: 13px;
+}
+
+.progress-section #currentTime,
+.progress-section #totalTime {
+    min-width: 42px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
+}
+
+
+
+.loop-btn {
+    min-width: 58px;
+    padding: 8px 14px;
+    border-radius: 10px;
+    border: none;
+    background-color: var(--accent);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+}
+
+.loop-btn:hover {
+    background-color: var(--accent-hover);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+}
+
+.loop-btn[aria-pressed="true"] {
+    background-color: var(--accent-hover);
+    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.5);
+}
+
+/* ==================== 设置控件（重写） ==================== */
+.settings-section {
+    width: 100%;
+}
+
+.settings-body {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 14px;
+    align-items: stretch;
+}
+
+
+
+.settings-section .volume-control {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 10px 12px;
+    min-height: 56px;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+    white-space: normal;
+}
+
+.settings-section .volume-control > span:first-child {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--text-secondary);
+    min-width: 72px;
+}
+
+.settings-section .volume-control:has(input[type="range"]) {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr) 64px;
+    align-items: center;
+    gap: 10px;
+}
+
+.settings-section .volume-control:has(input[type="range"]) .slider {
+    width: 100%;
+    max-width: none;
+}
+
+.settings-section .volume-control:has(input[type="range"]) > span:last-child {
+    text-align: right;
+    min-width: 56px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+}
+
+.settings-section .volume-control:has(select) {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+}
+
+.settings-section .volume-control:has(.direction-group) {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+}
+
+.settings-section .volume-control:has(.switch-container) {
+    display: grid;
+    grid-template-columns: 72px 1fr;
+    align-items: center;
+    gap: 10px;
+}
+
+.settings-section .volume-control:has(.switch-container) .switch-container {
+    justify-self: end;
+}
+
+.settings-section .custom-select-wrapper {
+    width: 100%;
+}
+
+.settings-section .custom-select {
+    width: 100%;
+    min-height: 34px;
+    font-size: 13px;
+}
+
+.direction-group {
+    display: inline-grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    width: 100%;
+}
+
+.direction-btn {
+    border: 1px solid var(--select-border);
+    background: var(--select-bg);
+    color: var(--text-secondary);
+    border-radius: 8px;
+    padding: 7px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+}
+
+.direction-btn:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+}
+
+.direction-btn.active {
+    color: #fff;
+    border-color: var(--accent);
+    background: var(--accent);
+}
+
+.playback-rate-control {
+    display: grid !important;
+    grid-template-columns: 72px minmax(0, 1fr) 64px !important;
+    align-items: center;
+    gap: 10px;
+}
+
+#playbackRateValue {
+    min-width: 56px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+}
+
+.progress-bar {
+    width: 100%;
+    min-width: 100px;
+    height: 8px;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--progress-bg);
+    border-radius: 4px;
+}
+
+.progress-bar::-webkit-slider-runnable-track {
+    height: 8px;
+    border-radius: 4px;
+    background: var(--progress-bg);
+}
+
+.progress-bar::-moz-range-track {
+    height: 8px;
+    border-radius: 4px;
+    background: var(--progress-bg);
+}
+
+.progress-bar::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    margin-top: -4px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.progress-bar::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+
+
+/* ==================== 开关样式 ==================== */
+.switch-container {
+    position: relative;
+    display: inline-block;
+    width: 34px;
+    height: 20px;
+}
+
+.switch-container input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.checkmark {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--switch-bg);
+    transition: .4s;
+    border-radius: 20px;
+}
+
+.checkmark:before {
+    position: absolute;
+    content: "";
+    height: 14px;
+    width: 14px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: .4s;
+    border-radius: 50%;
+}
+
+input:checked+.checkmark {
+    background: var(--accent);
+}
+
+input:checked+.checkmark:before {
+    transform: translateX(14px);
+}
+
+/* ==================== 自定义选择框 ==================== */
+.custom-select-wrapper {
+    position: relative;
+    display: inline-block;
+    flex-grow: 1;
+    width: 100%;
+}
+
+.custom-select {
+    padding: 4px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--select-border);
+    background-color: var(--select-bg);
+    color: var(--text-primary);
+    outline: none;
+    box-sizing: border-box;
+}
+
+.custom-select:hover {
+    border-color: var(--accent);
+}
+
+.custom-select option {
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+    padding: 10px;
+}
+
+/* ==================== 页脚样式 ==================== */
+.footer {
+    width: 95%;
+    max-width: 1440px;
+    margin-top: 40px;
+    padding: 20px 0;
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.footer-links {
+    display: flex;
+    gap: 24px;
+    align-items: center;
+}
+
+.footer-links a {
+    color: var(--text-secondary);
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    transition: color 0.2s ease;
+}
+
+.footer-links a:hover {
+    color: var(--accent);
+}
+
+.footer-links svg {
+    width: 16px;
+    height: 16px;
+}
+
+.copyright {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+/* ==================== 音轨控制面板 ==================== */
+.track-panel {
+    margin-top: 16px;
+    width: 95%;
+    max-width: 1440px;
+    margin-top: 20px;
+    padding: 20px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px var(--canvas-shadow);
+}
+
+.track-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.track-panel-title {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.track-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.track-empty {
+    color: var(--text-muted);
+    font-size: 13px;
+    text-align: center;
+    padding: 20px;
+    width: 100%;
+}
+
+.track-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: var(--bg-hover);
+    border-radius: 8px;
+    border: 1px solid transparent;
+    transition: all 0.2s;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+.track-item.disabled {
+    opacity: 0.5;
+}
+
+/* 音轨音量控制容器 */
+.track-volume-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    min-width: 120px;
+}
+
+/* CC7事件指示器 */
+.cc7-indicator {
+    font-size: 11px;
+    color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+    white-space: nowrap;
+    cursor: help;
+    transition: all 0.2s;
+}
+
+.cc7-indicator:hover {
+    background: rgba(var(--accent-rgb), 0.2);
+    transform: scale(1.05);
+}
+
+/* 音量值显示 */
+.track-volume-value {
+    font-size: 11px;
+    color: var(--text-secondary);
+    min-width: 32px;
+    text-align: right;
+    font-family: 'Courier New', monospace;
+}
+
+.track-volume-slider {
+    flex-grow: 1;
+    max-width: 80px;
+    margin-left: auto;
+    /* 将滑块推到最右侧 */
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--slider-bg);
+    cursor: pointer;
+}
+
+.track-volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    /* 使用传入的 --track-hue CSS变量给对应轨道滑块染色 */
+    background: hsl(var(--track-hue), 80%, 55%);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.track-volume-slider::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: none;
+    background: hsl(var(--track-hue), 80%, 55%);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.track-item:hover {
+    border-color: var(--accent);
+}
+
+.track-item.disabled {
+    opacity: 0.5;
+}
+
+.track-name {
+    font-size: 13px;
+    color: var(--text-primary);
+    font-weight: 500;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.track-name::before {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: hsl(var(--track-hue), 100%, 60%);
+    margin-right: 6px;
+    vertical-align: middle;
+}
+
+.track-sep {
+    color: var(--text-muted);
+    font-size: 11px;
+}
+
+.track-notes {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.track-range {
+    font-size: 12px;
+    color: var(--accent);
+    font-weight: 500;
+}
+
+.track-count {
+    font-size: 12px;
+    color: var(--text-secondary);
+    background: var(--bg-hover);
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-weight: 500;
+}
+
+.track-instrument-select {
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 2px 4px;
+    font-size: 11px;
+    margin: 0 5px;
+    cursor: pointer;
+    outline: none;
+    min-width: 240px;
+    max-width: 420px;
+}
+
+.track-instrument-select:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+}
+
+.track-instrument-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* 确保 track-item 里的元素对齐 */
+.track-item {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 10px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+}
+
+/* MIDI 文件信息行 */
+.midi-info {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 12px;
+}
+
+.midi-icon {
+    width: 18px;
+    height: 18px;
+    color: var(--accent);
+    flex-shrink: 0;
+}
+
+.midi-filename {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.midi-divider {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.midi-meta {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.midi-info-empty {
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+/* 音轨开关复选框样式 */
+.track-toggle {
+    position: relative;
+    display: inline-block;
+    width: 34px;
+    height: 20px;
+    flex-shrink: 0;
+}
+
+.track-toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.track-checkbox {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--slider-bg);
+    transition: .3s;
+    border-radius: 20px;
+}
+
+.track-checkbox::before {
+    position: absolute;
+    content: "";
+    height: 14px;
+    width: 14px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: .3s;
+    border-radius: 50%;
+}
+
+.track-toggle input:checked+.track-checkbox {
+    background: hsl(var(--track-hue), 80%, 55%);
+}
+
+.track-toggle input:checked+.track-checkbox::before {
+    transform: translateX(14px);
+}
+
+.track-toggle input:checked+.track-checkbox::before {
+    transform: translateX(16px);
+}
+
+.track-toggle input:focus+.track-checkbox {
+    box-shadow: 0 0 0 2px var(--accent);
+}
+
+/* ==================== 手机端响应式优化 ==================== */
+@media (max-width: 768px) {
+    body {
+        padding: 5px;
+    }
+
+    /* 头部调整 */
+    .header {
+        width: 100%;
+        margin-bottom: 15px;
+    }
+
+    h1 {
+        font-size: 1.2rem;
+        padding: 15px;
+    }
+
+    .canvas-wrapper {
+        width: 95% !important;
+    }
+
+    /* 画布自适应 */
+    #canvas {
+        width: 100% !important;
+        height: auto !important;
+        aspect-ratio: unset;
+        /* 取消固定比例 */
+        min-height: 480px;
+        /* 给垂直瀑布流更多垂直空间 */
+        max-height: 60vh;
+        /* 最多占屏幕58%，避免挤压控制栏 */
+        border-radius: 16px;
+    }
+
+    .track-panel {
+        padding: 16px 14px;
+        /* 缩小面板内边距 */
+    }
+
+    .track-list {
+        gap: 8px;
+        /* 缩小卡片间距 */
+    }
+
+    .track-item {
+        width: 100%;
+        min-width: unset;
+        padding: 12px 14px;
+        /* 更紧凑 */
+        font-size: 13.5px;
+    }
+
+    .track-name {
+        max-width: 160px;
+        /* 名字不被挤得太短 */
+        font-size: 13.5px;
+    }
+
+    .track-notes,
+    .track-range,
+    .track-count {
+        font-size: 12px;
+    }
+
+    /* 进度条区域：充满整行 */
+    .progress-section {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 12px;
+    }
+
+    .progress-section > .upload-btn {
+        order: 1;
+        flex: 1 1 100%;
+        width: 100% !important;
+    }
+
+    .progress-section > .select-label {
+        display: none;
+    }
+
+    .progress-section > .custom-select-wrapper {
+        order: 2;
+        flex: 1 1 100%;
+        width: 100%;
+    }
+
+    .upload-btn {
+        min-width: 100px;
+        padding: 8px 16px;
+        font-size: 13px;
+        white-space: nowrap;
+    }
+
+    .select-label {
+        font-size: 14px;
+        white-space: nowrap;
+    }
+
+    .custom-select {
+        width: 100%;
+        padding: 7px 10px;
+        font-size: 13px;
+    }
+
+    .progress-section > #loopBtn { order: 3; }
+    .progress-section > #playBtn { order: 4; }
+    .progress-section > #currentTime { order: 5; }
+    .progress-section > #totalTime { order: 7; margin-left: auto; }
+
+    #playBtn {
+        padding: 8px 14px;
+        min-width: 48px;
+    }
+
+    #currentTime,
+    #totalTime {
+        font-size: 13px;
+        min-width: 38px;
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .progress-bar {
+        order: 6;
+        flex: 1 1 120px;
+        width: 100% !important;
+        min-width: 120px;
+    }
+
+    .settings-section {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+
+    .settings-section .volume-control {
+        min-height: 52px;
+        padding: 9px 10px;
+        border-radius: 10px;
+    }
+
+    .settings-section .volume-control > span:first-child {
+        min-width: 64px;
+        font-size: 12px;
+    }
+
+    .settings-section .volume-control:has(input[type="range"]) {
+        grid-template-columns: 64px minmax(0, 1fr) 56px;
+        gap: 8px;
+    }
+
+    .settings-section .volume-control:has(select) {
+        grid-template-columns: 64px minmax(0, 1fr);
+        gap: 8px;
+    }
+
+    .settings-section .volume-control:has(.direction-group) {
+        grid-template-columns: 64px minmax(0, 1fr);
+        gap: 8px;
+    }
+
+    .settings-section .volume-control:has(.switch-container) {
+        grid-template-columns: 64px 1fr;
+    }
+
+    .settings-section .custom-select {
+        padding: 7px 10px;
+        font-size: 12px;
+    }
+
+    .playback-rate-control {
+        grid-template-columns: 64px minmax(0, 1fr) 56px !important;
+    }
+
+    .direction-btn {
+        padding: 8px 8px;
+        font-size: 12px;
+    }
+
+    #playbackRateValue {
+        min-width: 52px;
+        font-size: 12px;
+    }
+
+    /* 音轨面板优化 */
+    .track-item {
+        width: 100%;
+        min-width: unset;
+        padding: 12px;
+    }
+
+    .track-name {
+        max-width: 150px;
+    }
+
+    /* 页脚优化 */
+    .footer-links {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        /* 链接两两排列 */
+        gap: 15px;
+        text-align: center;
+    }
+
+    .footer-links a {
+        justify-content: center;
+    }
+}
+
+/* ==================== 加载进度条样式 ==================== */
+.loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    backdrop-filter: blur(5px);
+}
+
+.loading-content {
+    text-align: center;
+    color: #fff;
+    padding: 40px;
+    background: rgba(30, 30, 30, 0.9);
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    min-width: 320px;
+}
+
+.loading-spinner {
+    width: 50px;
+    height: 50px;
+    margin: 0 auto 20px;
+    border: 4px solid rgba(255, 255, 255, 0.1);
+    border-top-color: #667eea;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.loading-text {
+    font-size: 16px;
+    margin-bottom: 20px;
+    color: #e0e0e0;
+}
+
+.progress-bar-container {
+    width: 100%;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 12px;
+}
+
+.loading-progress-bar {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+    box-shadow: 0 0 10px rgba(102, 126, 234, 0.5);
+}
+
+.loading-percentage {
+    font-size: 24px;
+    font-weight: bold;
+    color: #667eea;
+}
+
+/* 加载遮罩 */
+.loading-overlay {
+    background: rgba(255, 255, 255, 0.9);
+}
+
+.loading-content {
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+}
+
+.loading-text {
+    color: #333;
+}
+
+.progress-bar-container {
+    background: rgba(0, 0, 0, 0.1);
+}

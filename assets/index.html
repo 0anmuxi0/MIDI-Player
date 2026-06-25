@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MIDI 可视化播放器</title>
+    <link rel="stylesheet" href="./styles.css">
+    <script src="./Tone.js"></script>
+    <script src="./midi"></script>
+</head>
+<body>
+    
+    <div class="canvas-wrapper" id="canvasWrapper">
+        <button class="canvas-fs-btn" id="canvasFsBtn" type="button" title="切换全屏/窗口" aria-label="切换全屏/窗口">⛶</button>
+
+        <canvas id="canvas" width="1246" height="720"></canvas>
+    </div>
+    
+    <div class="bottom-controls">
+        
+        <div class="progress-section">
+            <input type="file" id="fileInput" accept=".mid,.midi">
+            <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
+                上传 MIDI 文件
+            </button>
+            <button id="playBtn" disabled="">
+                <svg id="playIcon" viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"></polygon></svg>
+            </button>
+            <span id="currentTime">0:00</span>
+            <input type="range" id="progressSlider" min="0" max="100" value="0" step="0.1" class="progress-bar">
+            <span id="totalTime">0:00</span>
+            <button id="loopBtn" class="loop-btn" type="button" aria-pressed="false">
+                循环
+            </button>
+        </div>
+        <div class="settings-section">
+
+            <div class="settings-body" id="settingsBody">
+                <div class="volume-control">
+                    <span>音量</span>
+                    <input type="range" id="volumeSlider" min="-40" max="0" value="-6" step="1" class="slider">
+                    <span id="volumeValue">-6 dB</span>
+                </div>
+                <div class="volume-control">
+                    <span>瀑布流速度</span>
+                    <input type="range" id="speedSlider" min="128" max="2048" value="256" step="16" class="slider">
+                    <span id="speedValue">256</span>
+                </div>
+                <div class="volume-control">
+                    <span>辅助信息</span>
+                    <label class="switch-container">
+                        <input type="checkbox" id="infoToggle" checked="">
+                        <span class="checkmark"></span>
+                    </label>
+                </div>
+                <div class="volume-control">
+                    <span>方向</span>
+                    <div class="direction-group" id="directionGroup">
+                        <button type="button" class="direction-btn active" data-direction="horizontal">水平</button>
+                        <button type="button" class="direction-btn" data-direction="vertical">垂直</button>
+                    </div>
+                </div>
+                <div class="volume-control playback-rate-control">
+                    <span>播放速度</span>
+                    <input type="range" id="playbackRateSlider" min="0.5" max="2" value="1" step="0.25" class="slider">
+                    <span id="playbackRateValue">×1.0</span>
+                </div>
+                <div class="volume-control hitline-position-control">
+                    <span>判定线位置</span>
+                    <input type="range" id="hitLinePositionSlider" min="0.1" max="0.9" value="0.5" step="0.05" class="slider">
+                    <span id="hitLinePositionValue">50%</span>
+                </div>
+                <div class="volume-control effects-control">
+                    <span>粒子特效</span>
+                    <label class="switch-container">
+                        <input type="checkbox" id="particleToggle" checked="">
+                        <span class="checkmark"></span>
+                    </label>
+                </div>
+                <div class="volume-control effects-control">
+                    <span>音符发光</span>
+                    <label class="switch-container">
+                        <input type="checkbox" id="glowToggle" checked="">
+                        <span class="checkmark"></span>
+                    </label>
+                </div>
+                <div class="volume-control">
+                    <span>粒子数量</span>
+                    <input type="range" id="particleLimitSlider" min="256" max="2176" value="1024" step="128" class="slider">
+                    <span id="particleLimitValue">1024</span>
+                </div>
+                <div class="volume-control effects-control">
+                    <span>屏幕震动</span>
+                    <label class="switch-container">
+                        <input type="checkbox" id="shakeToggle" checked="">
+                        <span class="checkmark"></span>
+                    </label>
+                </div>
+                <div class="volume-control">
+                    <span>震动幅度</span>
+                    <input type="range" id="shakeIntensitySlider" min="0" max="12" value="4" step="0.5" class="slider">
+                    <span id="shakeIntensityValue">4</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <p class="status" id="status">请上传 MIDI 文件</p>
+    <p class="info">空格暂停/继续 | R 重置</p>
+
+    <!-- 音轨控制面板 -->
+    <div class="track-panel" id="trackPanel">
+        <div class="midi-info" id="midiInfo">
+            <span class="midi-info-empty">加载 MIDI 文件后显示文件信息</span>
+        </div>
+        <div class="track-list" id="trackList">
+            <p class="track-empty">加载 MIDI 文件后显示音轨信息</p>
+        </div>
+    </div>
+
+    <script src="./app.js"></script>
+
+</body>
+</html>
