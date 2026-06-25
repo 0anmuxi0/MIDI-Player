@@ -4,18 +4,12 @@ __pycache__/
 *.pyo
 .venv/
 venv/
-
 # PyInstaller 构建产物
 dist/
 build/
 *.spec
-
 # 配置文件（含窗口尺寸等本地设置）
 config.json
-
-# 音色库文件太大，不上传 GitHub
-soundfonts/
-
 # 系统
 Thumbs.db
 .DS_Store
