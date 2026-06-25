@@ -6,8 +6,6 @@
 
 ## 预览
 
-<!-- 截图存放在 screenshots/ 目录下，用相对路径引用 -->
-
 | 主界面 | 音轨 |
 |:---:|:---:|
 | ![主界面截图](./screenshots/main.png) | ![全屏截图](./screenshots/sound.png) |
@@ -16,6 +14,9 @@
 |:---:|:---:|
 | ![水平模式](./screenshots/horizontal.png) | ![垂直模式](./screenshots/vertical.png) |
 
+### 演示视频
+
+<video src="./screenshots/video.mp4" controls width="100%" style="max-width: 720px; border-radius: 12px;"></video>
 ---
 
 ## 功能特性

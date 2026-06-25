@@ -423,22 +423,24 @@ input[type=range]:hover::-webkit-slider-thumb {
     min-width: 58px;
     padding: 8px 14px;
     border-radius: 10px;
-    border: none;
-    background-color: var(--accent);
-    color: #fff;
+    border: 1px solid var(--border-color);
+    background: var(--bg-primary);
+    color: var(--text-muted);
     font-size: 12px;
     font-weight: 600;
-    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+    transition: all 0.2s ease;
 }
 
 .loop-btn:hover {
-    background-color: var(--accent-hover);
-    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+    border-color: var(--accent);
+    color: var(--accent);
 }
 
 .loop-btn[aria-pressed="true"] {
-    background-color: var(--accent-hover);
-    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.5);
+    border-color: var(--accent);
+    background-color: var(--accent);
+    color: #fff;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
 }
 
 /* ==================== 设置控件（重写） ==================== */
