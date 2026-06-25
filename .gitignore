@@ -9,7 +9,9 @@ dist/
 # batch 文件
 push.bat
 test.bat
-# 系统
+# Windows
 Thumbs.db
 .DS_Store
+# config
+config.json
 
