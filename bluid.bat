@@ -12,9 +12,9 @@ cd /d "%~dp0"
     --hidden-import pathlib ^
     --add-data "assets;assets" ^
     --add-data "soundfonts;soundfonts" ^
-    --distpath "build" ^
+    --distpath "dist" ^
     "MIDI Player.py"
-start "" "%CD%\build"
+start "" "%CD%\dist"
 if exist "build" rmdir /s /q "build"
 if exist "*.spec" del /q "*.spec" 
 if exist "nuld" del /q "nuld"
