@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+# PyInstaller 构建产物
+dist/
+# batch 文件
+push.bat
+test.bat
+# 系统
+Thumbs.db
+.DS_Store
+
