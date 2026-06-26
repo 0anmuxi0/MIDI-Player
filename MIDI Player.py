@@ -46,7 +46,7 @@ class WebViewApi:
             return str(e)
 api = WebViewApi()
 def start_flask():
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    app.run(host="127.0.0.1", port=7891, debug=False)
 def load_window_size():
     return 1360, 745
 if __name__ == "__main__":
@@ -55,7 +55,7 @@ if __name__ == "__main__":
     t.start()
     window = webview.create_window(
         "MIDI 可视化播放器",
-        url="http://127.0.0.1:5000",
+        url="http://127.0.0.1:7891",
         js_api=api,
         width=width,
         height=height,
