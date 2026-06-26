@@ -992,8 +992,7 @@ function clearLoadedMidiData() {
 function stopAndClear() { resetPlaybackState(true); clearLoadedMidiData(); }
 
 // ==================== 加载 MIDI ====================
-fileInput.addEventListener('change', async (e) => {
-    const file = e.target.files[0];
+async function loadMidiFile(file) {
     if (!file) return;
     stopAndClear();
     showLoading();
@@ -1041,11 +1040,59 @@ fileInput.addEventListener('change', async (e) => {
         drawFrame(0);
         
         updateLoadingProgress(100);
-        setTimeout(() => hideLoading(), 300); // 延迟隐藏，让用户看到100%
+        setTimeout(() => hideLoading(), 300);
     } catch (err) { 
         console.error('加载失败:', err); 
         statusEl.textContent = '加载失败: ' + err.message;
         hideLoading();
+    }
+}
+
+fileInput.addEventListener('change', (e) => {
+    loadMidiFile(e.target.files[0]);
+});
+
+// ==================== 拖放加载 MIDI ====================
+let dragCounter = 0;
+
+document.body.addEventListener('dragenter', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter++;
+    if (dragCounter === 1) {
+        document.body.classList.add('drag-over');
+    }
+});
+
+document.body.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+});
+
+document.body.addEventListener('dragleave', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter--;
+    if (dragCounter === 0) {
+        document.body.classList.remove('drag-over');
+    }
+});
+
+document.body.addEventListener('drop', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter = 0;
+    document.body.classList.remove('drag-over');
+    
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+        const file = files[0];
+        const name = file.name.toLowerCase();
+        if (name.endsWith('.mid') || name.endsWith('.midi')) {
+            loadMidiFile(file);
+        } else {
+            statusEl.textContent = '不支持的文件格式，请拖入 .mid 或 .midi 文件';
+        }
     }
 });
 
