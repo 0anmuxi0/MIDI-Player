@@ -84,7 +84,7 @@ body.drag-over::after {
     font-size: 28px;
     font-weight: 600;
     color: var(--accent);
-    background: rgba(102, 126, 234, 0.12);
+    background: rgba(255, 255, 255, 0.12);
     backdrop-filter: blur(4px);
     z-index: 9999;
     pointer-events: none;
