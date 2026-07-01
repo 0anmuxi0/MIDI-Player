@@ -85,5 +85,6 @@ if __name__ == "__main__":
         confirm_close=False,
         background_color='#ffffff'
     )
+    # Set the window in the API so that it can toggle fullscreen
     api.set_window(window)
     webview.start()
