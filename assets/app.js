@@ -252,7 +252,7 @@
         HEIGHT = Math.max(240, Math.round(height));
         canvas.width = WIDTH;
         canvas.height = HEIGHT;
-        if (!isPlaying) drawFrame(currentTime);
+        drawFrame(currentTime);
     }
 
     function updateCanvasSizeForCurrentMode() {
@@ -322,6 +322,8 @@
             requestAnimationFrame(keepHidden);
         }
         updateCanvasSizeForCurrentMode();
+        // 退出全屏后强制立即绘制白色背景，防止黑色闪烁
+        requestAnimationFrame(() => drawFrame(currentTime));
     });
 
     let resizeTimer;
