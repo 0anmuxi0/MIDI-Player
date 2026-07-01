@@ -363,14 +363,17 @@ input[type=range]:hover::-webkit-slider-thumb {
 }
 
 #canvas {
-    background: var(--canvas-bg);
+    background: #ffffff;
     border-radius: 12px;
     box-shadow: 0 8px 32px var(--canvas-shadow);
     cursor: pointer;
     display: block;
-    transition: background-color 0.3s ease, box-shadow 0.3s ease;
     width: 100%;
     max-width: none;
+}
+
+.canvas-wrapper {
+    background: #ffffff;
 }
 
 /* ==================== 底部信息 ==================== */
