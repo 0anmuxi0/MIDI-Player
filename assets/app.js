@@ -649,6 +649,15 @@
         if (!isPlaying) animateTransition();
         saveConfig();
     });
+
+    const velocityToggle = document.getElementById('velocityToggle');
+    if (velocityToggle) {
+        velocityToggle.addEventListener('change', (e) => {
+            showVelocity = e.target.checked;
+            if (!isPlaying) drawFrame(currentTime);
+            saveConfig();
+        });
+    }
     function animateTransition() {
         if (Math.abs(currentExtraInfoAlpha - targetExtraInfoAlpha) > 0.01) {
             drawFrame(currentTime);
@@ -863,6 +872,9 @@
             }
         });
     }
+
+    // ==================== 力度显示设置 ====================
+    let showVelocity = true;   // 力度显示开关
 
     // ==================== 小节线显示设置 ====================
     let showMeasureLines = true;
@@ -1116,11 +1128,17 @@
                         let particleX, particleY;
                         if (isHorizontal) { particleX = hitX; particleY = midiToY(note.midi); }
                         else { particleX = midiToX(note.midi); particleY = hitY; }
-                        const trackHue = trackInfo.length > 0 && trackInfo[note.track] ? trackInfo[note.track].hue : trackHues[note.track % trackHues.length];
-                        const trackVolume = trackInfo.length > 0 && trackInfo[note.track] ? trackInfo[note.track].volume : 1.0;
+                        const track = trackInfo.length > 0 && trackInfo[note.track] ? trackInfo[note.track] : null;
+                        const trackVolume = track ? track.volume : 1.0;
+                        const alpha = trackVolume * note.velocity;
                         
-                        // 粒子颜色：固定饱和度和亮度，音量控制透明度
-                        const particleColor = `hsla(${trackHue}, 100%, 60%, ${trackVolume})`;
+                        // 计算击打瞬间的音符渲染颜色，与 drawFrame 中的渲染逻辑保持一致
+                        // 击打瞬间音符跨越判定线，使用彩色渲染
+                        const trackHue = track ? track.hue : trackHues[note.track % trackHues.length];
+                        const hue = trackHue + note.velocity * 20;
+                        const isLight = isLightTheme();
+                        const lightness = isLight ? 60 : 55;
+                        const particleColor = `hsla(${hue}, 100%, ${lightness}%, ${alpha})`;
                         
                         // 减少粒子数量：从10-25个改为5-12个，但受全局限制
                         const requestedCount = Math.floor(5 + note.velocity * 7);
@@ -1404,16 +1422,41 @@
                 }
             }
 
+            // ========= 力度显示 =========
+            if (showVelocity && timeDelta > -1.0 && timeDelta < FADE_TIME) {
+                const velPercent = Math.round(note.velocity * 100);
+                ctx.save();
+                ctx.fillStyle = isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)';
+                ctx.font = '10px "Segoe UI", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                if (isHorizontal) {
+                    const y = midiToY(note.midi);
+                    // 显示在音符上方
+                    ctx.fillText(velPercent + '%', hitX + timeDelta * SPEED + length / 2, y - THICKNESS / 2 - 10);
+                } else {
+                    const x = midiToX(note.midi);
+                    // 显示在音符右侧
+                    ctx.fillText(velPercent + '%', x + THICKNESS / 2 + 8, hitY - timeDelta * SPEED - length / 2);
+                }
+                ctx.restore();
+            }
+
             // ========= 长音持续粒子效果（修复版 + 数量限制） =========
-            // 关键修复：只有正在播放的音符（timeSinceEnd < 0）才会产生粒子，灰色音符不会产生
+            // 粒子颜色和透明度动态适配音符当前渲染状态（包括灰色淡出）
             if (isPlaying && enableParticles && timeSinceEnd < 0 && timeDelta <= 0) {
                 // 检查当前帧粒子数量是否已达上限（无限制模式下跳过检查）
                 if (unlimitedParticles || particles.length < maxParticlesPerFrame) {
-                    const trackHue = trackInfo.length > 0 && trackInfo[note.track] ? trackInfo[note.track].hue : trackHues[note.track % trackHues.length];
-                    const trackVolume = trackInfo.length > 0 && trackInfo[note.track] ? trackInfo[note.track].volume : 1.0;
-                    
-                    // 长音持续粒子颜色：固定饱和度和亮度，音量控制透明度
-                    const particleColor = `hsla(${trackHue}, 100%, 60%, ${trackVolume})`;
+                    // 判断音符的当前渲染状态：若已完全通过判定线，使用灰色；否则使用彩色
+                    const isFullyPassed = timeSinceEnd >= 0;
+                    let particleColor;
+                    if (isFullyPassed) {
+                        // 完全通过判定线的灰显状态
+                        particleColor = `hsla(0, 0%, ${isLight ? 75 : 35}%, ${alpha * 0.7})`;
+                    } else {
+                        // 使用与当前音符渲染完全一致的彩色
+                        particleColor = `hsla(${hue}, ${saturation}, ${lightness}%, ${alpha})`;
+                    }
                     
                     // 长音阈值改为 0.3 秒，降低概率到 0.4，每帧产生 1~2 个粒子
                     const isLongNote = note.duration > 0.3;
@@ -1465,6 +1508,7 @@
             shakeIntensity: parseFloat(shakeIntensitySlider?.value ?? 4),
             particleLimit: parseInt(particleLimitSlider?.value ?? 1024),
             info: infoToggle?.checked ?? true,
+            velocity: velocityToggle?.checked ?? true,
         };
         fetch('/api/config', {
             method: 'POST',
@@ -1524,6 +1568,10 @@
                     infoToggle.checked = cfg.info;
                     targetExtraInfoAlpha = cfg.info ? 1 : 0;
                     currentExtraInfoAlpha = targetExtraInfoAlpha;
+                }
+                if (cfg.velocity !== undefined && velocityToggle) {
+                    velocityToggle.checked = cfg.velocity;
+                    showVelocity = cfg.velocity;
                 }
 
                 if (!isPlaying) drawFrame(currentTime);
