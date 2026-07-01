@@ -1,5 +1,6 @@
 import json
 import threading
+import winreg
 from pathlib import Path
 
 import webview # type: ignore
@@ -11,20 +12,40 @@ app = Flask(__name__, static_folder=str(SRC_DIR), static_url_path="")
 import logging
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
+
+REGISTRY_PATH = r"Software\MIDIPlayer"
+
+def _load_config_from_registry():
+    """从 Windows 注册表读取配置"""
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, REGISTRY_PATH, 0, winreg.KEY_READ) as key:
+            value, _ = winreg.QueryValueEx(key, "config")
+            return json.loads(value)
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        return {}
+
+def _save_config_to_registry(cfg):
+    """保存配置到 Windows 注册表"""
+    try:
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, REGISTRY_PATH) as key:
+            winreg.SetValueEx(key, "config", 0, winreg.REG_SZ, json.dumps(cfg))
+    except OSError as e:
+        print(f"注册表写入失败: {e}")
+
 @app.route("/")
 def index():    
     return send_from_directory(str(SRC_DIR), "index.html")
 @app.route("/<path:filename>")
 def static_files(filename):
     return send_from_directory(str(SRC_DIR), filename)
-_memory_config = {}
 @app.route("/api/config", methods=["GET", "POST"])
 def handle_config():
-    global _memory_config
     if request.method == "POST":
-        _memory_config = request.get_json(force=True)
+        cfg = request.get_json(force=True)
+        _save_config_to_registry(cfg)
         return jsonify({"status": "ok"})
-    return jsonify(_memory_config)
+    cfg = _load_config_from_registry()
+    return jsonify(cfg)
 @app.route("/api/soundfonts/<path:subpath>")
 def serve_soundfont(subpath):
     return send_from_directory(str(SOUNDFONTS_DIR), subpath)
