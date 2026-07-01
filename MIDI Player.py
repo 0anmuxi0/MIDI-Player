@@ -83,6 +83,7 @@ if __name__ == "__main__":
         resizable=True,
         min_size=(1,1),
         confirm_close=False,
+        background_color='#ffffff'
     )
     api.set_window(window)
     webview.start()
