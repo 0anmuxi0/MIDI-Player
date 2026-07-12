@@ -2,7 +2,7 @@ import json
 import threading
 import winreg
 from pathlib import Path
-
+from elevate import elevate
 import webview
 from flask import Flask, jsonify, request, send_from_directory
 BASE_DIR = Path(__file__).parent.resolve()
@@ -16,7 +16,6 @@ log.setLevel(logging.ERROR)
 REGISTRY_PATH = r"Software\MIDIPlayer"
 
 def _load_config_from_registry():
-    """从 Windows 注册表读取配置"""
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, REGISTRY_PATH, 0, winreg.KEY_READ) as key:
             value, _ = winreg.QueryValueEx(key, "config")
@@ -70,6 +69,7 @@ def start_flask():
 def load_window_size():
     return 1360, 745
 if __name__ == "__main__":
+    elevate()
     width, height = load_window_size()
     t = threading.Thread(target=start_flask, daemon=True)
     t.start()
