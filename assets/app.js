@@ -1424,27 +1424,6 @@
                 }
             }
 
-            // ========= 力度显示 =========
-            if (showVelocity && timeDelta > -1.0 && timeDelta < FADE_TIME) {
-                const velPercent = Math.round(note.velocity * 100);
-                ctx.save();
-                ctx.fillStyle = isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)';
-                ctx.font = '10px "Segoe UI", sans-serif';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                if (isHorizontal) {
-                    const y = midiToY(note.midi);
-                    // 显示在音符上方
-                    ctx.fillText(velPercent + '%', hitX + timeDelta * SPEED + length / 2, y - THICKNESS / 2 - 10);
-                } else {
-                    const x = midiToX(note.midi);
-                    // 显示在音符右侧
-                    ctx.fillText(velPercent + '%', x + THICKNESS / 2 + 8, hitY - timeDelta * SPEED - length / 2);
-                }
-                ctx.restore();
-            }
-
-            // ========= 长音持续粒子效果（修复版 + 数量限制） =========
             // 粒子颜色和透明度动态适配音符当前渲染状态（包括灰色淡出）
             if (isPlaying && enableParticles && timeSinceEnd < 0 && timeDelta <= 0) {
                 // 检查当前帧粒子数量是否已达上限（无限制模式下跳过检查）

@@ -3,8 +3,8 @@ import threading
 import winreg
 from pathlib import Path
 
-import webview # type: ignore
-from flask import Flask, jsonify, request, send_from_directory # type: ignore
+import webview
+from flask import Flask, jsonify, request, send_from_directory
 BASE_DIR = Path(__file__).parent.resolve()
 SRC_DIR = BASE_DIR / "assets"
 SOUNDFONTS_DIR = BASE_DIR / "soundfonts"
@@ -25,12 +25,11 @@ def _load_config_from_registry():
         return {}
 
 def _save_config_to_registry(cfg):
-    """保存配置到 Windows 注册表"""
     try:
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, REGISTRY_PATH) as key:
             winreg.SetValueEx(key, "config", 0, winreg.REG_SZ, json.dumps(cfg))
     except OSError as e:
-        print(f"注册表写入失败: {e}")
+        print(f"{e}")
 
 @app.route("/")
 def index():    
@@ -67,7 +66,7 @@ class WebViewApi:
             return str(e)
 api = WebViewApi()
 def start_flask():
-    app.run(host="127.0.0.1", port=7891, debug=False)
+    app.run(host="127.0.0.1", port=8000, debug=False)
 def load_window_size():
     return 1360, 745
 if __name__ == "__main__":
@@ -76,7 +75,7 @@ if __name__ == "__main__":
     t.start()
     window = webview.create_window(
         "MIDI 可视化播放器",
-        url="http://127.0.0.1:7891",
+        url="http://127.0.0.1:8000",
         js_api=api,
         width=width,
         height=height,
@@ -85,6 +84,5 @@ if __name__ == "__main__":
         confirm_close=False,
         background_color='#ffffff'
     )
-    # Set the window in the API so that it can toggle fullscreen
     api.set_window(window)
     webview.start()
