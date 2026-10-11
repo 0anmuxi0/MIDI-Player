@@ -153,6 +153,22 @@ body {
     padding: 8px 12px;
     gap: 10px;
     border-radius: 8px;
+    /* 各行的内容高度必须一致（分段选择器行原本更高） */
+    min-height: 56px;
+    align-items: center;
+}
+
+/* 分段选择器压到与开关/滑块一致的高度 */
+.app-content .settings-body-compact .win-selector-bar {
+    padding: 0 !important;
+}
+
+.app-content .settings-body-compact .win-selector-bar .win-selector-bar-item {
+    min-height: 32px;
+}
+
+.app-content .settings-body-compact .win-selector-bar .win-selector-bar-item-content {
+    margin: 4px 12px 3px 12px;
 }
 
 .app-content .settings-body-compact .win-settings-card-title {
