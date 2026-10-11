@@ -54,113 +54,126 @@
         <div class="win-card-header">
           <WinTextBlock Text="播放设置" FontWeight="600" />
         </div>
-        <div class="settings-body-compact">        <WinSettingsCard Header="外观" Description="浅色 / 深色 / 跟随系统">
-          <WinComboBox
-            :ItemsSource="themeItems"
-            DisplayMemberPath="label"
-            SelectedValuePath="value"
-            :SelectedValue="themeMode"
-            :MinWidth="160"
-            @update:SelectedValue="setTheme" />
+        <div class="settings-body-compact">
+        <WinSettingsCard Header="外观">
+          <WinSelectorBar
+            :Items="themeOptions"
+            :SelectedItem="themeSelected"
+            @update:SelectedItem="onThemeSelect" />
         </WinSettingsCard>
 
-        <WinSettingsCard Header="音量" :Description="volume + ' dB'">
-          <div class="setting-slider">
-            <WinSlider
-              :Value="volume"
-              :Minimum="-40"
-              :Maximum="0"
-              :StepFrequency="1"
-              @update:Value="v => { volume = v; player?.setVolume(v) }" />
+        <WinSettingsCard Header="音量">
+          <div class="setting-control">
+            <WinTextBlock class="setting-value" :Text="volume + ' dB'" />
+            <div class="setting-slider">
+              <WinSlider
+                :Value="volume"
+                :Minimum="-40"
+                :Maximum="0"
+                :StepFrequency="1"
+                @update:Value="v => { volume = v; player?.setVolume(v) }" />
+            </div>
           </div>
         </WinSettingsCard>
 
-        <WinSettingsCard Header="瀑布流速度" :Description="String(speed)">
-          <div class="setting-slider">
-            <WinSlider
-              :Value="speed"
-              :Minimum="128"
-              :Maximum="2048"
-              :StepFrequency="16"
-              @update:Value="v => { speed = v; player?.setSpeed(v) }" />
+        <WinSettingsCard Header="瀑布流速度">
+          <div class="setting-control">
+            <WinTextBlock class="setting-value" :Text="String(speed)" />
+            <div class="setting-slider">
+              <WinSlider
+                :Value="speed"
+                :Minimum="128"
+                :Maximum="2048"
+                :StepFrequency="16"
+                @update:Value="v => { speed = v; player?.setSpeed(v) }" />
+            </div>
           </div>
         </WinSettingsCard>
 
-        <WinSettingsCard Header="播放速度" :Description="'×' + playbackRate.toFixed(2)">
-          <div class="setting-slider">
-            <WinSlider
-              :Value="playbackRate"
-              :Minimum="0.5"
-              :Maximum="2"
-              :StepFrequency="0.25"
-              @update:Value="v => { playbackRate = v; player?.setPlaybackRate(v) }" />
+        <WinSettingsCard Header="播放速度">
+          <div class="setting-control">
+            <WinTextBlock class="setting-value" :Text="'×' + playbackRate.toFixed(2)" />
+            <div class="setting-slider">
+              <WinSlider
+                :Value="playbackRate"
+                :Minimum="0.5"
+                :Maximum="2"
+                :StepFrequency="0.25"
+                @update:Value="v => { playbackRate = v; player?.setPlaybackRate(v) }" />
+            </div>
           </div>
         </WinSettingsCard>
 
-        <WinSettingsCard Header="判定线位置" :Description="Math.round(hitLinePosition * 100) + '%'">
-          <div class="setting-slider">
-            <WinSlider
-              :Value="hitLinePosition"
-              :Minimum="0.1"
-              :Maximum="0.9"
-              :StepFrequency="0.05"
-              @update:Value="v => { hitLinePosition = v; player?.setHitLinePosition(v) }" />
+        <WinSettingsCard Header="判定线位置">
+          <div class="setting-control">
+            <WinTextBlock class="setting-value" :Text="Math.round(hitLinePosition * 100) + '%'" />
+            <div class="setting-slider">
+              <WinSlider
+                :Value="hitLinePosition"
+                :Minimum="0.1"
+                :Maximum="0.9"
+                :StepFrequency="0.05"
+                @update:Value="v => { hitLinePosition = v; player?.setHitLinePosition(v) }" />
+            </div>
           </div>
         </WinSettingsCard>
 
-        <WinSettingsCard Header="方向" Description="瀑布流滚动方向">
-          <WinComboBox
-            :ItemsSource="directionItems"
-            DisplayMemberPath="label"
-            SelectedValuePath="value"
-            :SelectedValue="direction"
-            :MinWidth="120"
-            @update:SelectedValue="setDirection" />
+        <WinSettingsCard Header="方向">
+          <WinSelectorBar
+            :Items="directionOptions"
+            :SelectedItem="directionSelected"
+            @update:SelectedItem="onDirectionSelect" />
         </WinSettingsCard>
 
-        <WinSettingsCard Header="辅助信息" Description="音名与小节标签">
+        <WinSettingsCard Header="辅助信息">
           <WinToggleSwitch
             :IsOn="infoEnabled"
             @update:IsOn="v => { infoEnabled = v; player?.setInfoEnabled(v) }" />
         </WinSettingsCard>
 
-        <WinSettingsCard Header="粒子特效" Description="音符击中判定线时产生粒子">
+        <WinSettingsCard Header="粒子特效">
           <WinToggleSwitch
             :IsOn="particlesEnabled"
             @update:IsOn="v => { particlesEnabled = v; player?.setParticlesEnabled(v) }" />
         </WinSettingsCard>
 
-        <WinSettingsCard Header="粒子数量" :Description="particleLimitLabel">
-          <div class="setting-slider">
-            <WinSlider
-              :Value="particleLimit"
-              :Minimum="256"
-              :Maximum="2176"
-              :StepFrequency="128"
-              @update:Value="v => { particleLimit = v; player?.setParticleLimit(v) }" />
+        <WinSettingsCard Header="粒子数量">
+          <div class="setting-control">
+            <WinTextBlock class="setting-value" :Text="particleLimitLabel" />
+            <div class="setting-slider">
+              <WinSlider
+                :Value="particleLimit"
+                :Minimum="256"
+                :Maximum="2176"
+                :StepFrequency="128"
+                @update:Value="v => { particleLimit = v; player?.setParticleLimit(v) }" />
+            </div>
           </div>
         </WinSettingsCard>
 
-        <WinSettingsCard Header="音符发光" Description="击中瞬间的描边光晕">
+        <WinSettingsCard Header="音符发光">
           <WinToggleSwitch
             :IsOn="glowEnabled"
             @update:IsOn="v => { glowEnabled = v; player?.setGlowEnabled(v) }" />
         </WinSettingsCard>
 
-        <WinSettingsCard Header="屏幕震动" Description="击中时画面抖动">
+        <WinSettingsCard Header="屏幕震动">
           <WinToggleSwitch
             :IsOn="shakeEnabled"
             @update:IsOn="v => { shakeEnabled = v; player?.setShakeEnabled(v) }" />
         </WinSettingsCard>
 
-        <WinSettingsCard Header="震动幅度" :Description="String(shakeIntensity)">
-          <div class="setting-slider">
-            <WinSlider
-              :Value="shakeIntensity"
-              :Minimum="2"
-              :Maximum="32"
-              :StepFrequency="1"
-              @update:Value="v => { shakeIntensity = v; player?.setShakeIntensity(v) }" />
+        <WinSettingsCard Header="震动幅度">
+          <div class="setting-control">
+            <WinTextBlock class="setting-value" :Text="String(shakeIntensity)" />
+            <div class="setting-slider">
+              <WinSlider
+                :Value="shakeIntensity"
+                :Minimum="2"
+                :Maximum="32"
+                :StepFrequency="1"
+                @update:Value="v => { shakeIntensity = v; player?.setShakeIntensity(v) }" />
+            </div>
           </div>
         </WinSettingsCard>
         </div>
@@ -235,6 +248,7 @@ import WinProgressBar from './winui/components/WinProgressBar.vue'
 import WinToggleSwitch from './winui/components/WinToggleSwitch.vue'
 import WinSettingsCard from './winui/components/WinSettingsCard.vue'
 import WinComboBox from './winui/components/WinComboBox.vue'
+import WinSelectorBar from './winui/components/WinSelectorBar.vue'
 import { createMidiPlayer } from './player/player.js'
 
 interface TrackInfo {
@@ -259,11 +273,17 @@ const THEME_KEY = 'midiPlayer.theme'
 const themeMode = ref<'light' | 'dark' | 'system'>('system')
 const isDark = ref(false)
 
-const themeItems = [
-  { label: '浅色', value: 'light' },
-  { label: '深色', value: 'dark' },
-  { label: '跟随系统', value: 'system' }
+// WinSelectorBar 的 SelectedItem 必须是 Items 中的同一个对象引用
+const themeOptions = [
+  { Text: '浅色', Value: 'light' },
+  { Text: '深色', Value: 'dark' },
+  { Text: '跟随系统', Value: 'system' }
 ]
+const themeSelected = computed(() => themeOptions.find(o => o.Value === themeMode.value) ?? themeOptions[2])
+
+function onThemeSelect(item: unknown) {
+  setTheme((item as { Value?: string } | null)?.Value)
+}
 
 function resolveDark(mode: string) {
   if (mode === 'dark') return true
@@ -324,10 +344,15 @@ const shakeEnabled = ref(true)
 const shakeIntensity = ref(8)
 const particleLimit = ref(1024)
 
-const directionItems = [
-  { label: '水平', value: 'horizontal' },
-  { label: '垂直', value: 'vertical' }
+const directionOptions = [
+  { Text: '水平', Value: 'horizontal' },
+  { Text: '垂直', Value: 'vertical' }
 ]
+const directionSelected = computed(() => directionOptions.find(o => o.Value === direction.value) ?? directionOptions[0])
+
+function onDirectionSelect(item: unknown) {
+  setDirection((item as { Value?: string } | null)?.Value)
+}
 
 const instrumentItems = ref<{ value: string; label: string }[]>([])
 

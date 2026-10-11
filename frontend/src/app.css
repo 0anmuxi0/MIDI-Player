@@ -168,16 +168,33 @@ body {
 /* 列宽变窄时允许控件区收缩，避免溢出 */
 .app-content .settings-body-compact .win-settings-card-content {
     flex: 0 0 auto;
-    width: 200px;
+    width: 240px;
     justify-content: flex-end;
     min-width: 0;
 }
 
+/* 数值在左、滑块在右 */
+.app-content .settings-body-compact .setting-control {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+}
+
+.app-content .settings-body-compact .setting-value {
+    flex: 0 0 auto;
+    min-width: 52px;
+    text-align: right;
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
 .setting-slider {
-    flex: 1 1 auto;
+    flex: 1 1 0;
     min-width: 0;
     max-width: none;
-    width: 100%;
 }
 
 /* WinSlider 未传 Width 时：轨道内联 width:200px，且根元素为 inline-flex、轨道 flex-shrink:0，
