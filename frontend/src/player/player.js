@@ -835,6 +835,13 @@ export function createMidiPlayer({ canvas, wrapper, hooks = {} } = {}) {
         return MARGIN + (1 - normalized) * availableHeight;
     }
 
+    // 震动幅度基准：滑块值对应 1360px 画布下的位移，
+    // 实际位移随画布尺寸等比缩放，否则高分屏（大画布）上几乎看不出震动
+    const SHAKE_REFERENCE_SIZE = 1360;
+    function getShakeScale() {
+        return Math.max(WIDTH, HEIGHT) / SHAKE_REFERENCE_SIZE;
+    }
+
     function drawFrame(now) {
         if (currentExtraInfoAlpha < targetExtraInfoAlpha) currentExtraInfoAlpha = Math.min(1, currentExtraInfoAlpha + FADE_SPEED);
         else if (currentExtraInfoAlpha > targetExtraInfoAlpha) currentExtraInfoAlpha = Math.max(0, currentExtraInfoAlpha - FADE_SPEED);
@@ -861,7 +868,7 @@ export function createMidiPlayer({ canvas, wrapper, hooks = {} } = {}) {
                 // 只在音符刚触碰判定线的瞬间（50ms内）触发震动
                 if (td > -0.05 && td <= 0) hitMoment++;
             }
-            shakeAmount = Math.min(Math.pow(hitMoment, 1.4) * 0.25, shakeIntensity);
+            shakeAmount = Math.min(Math.pow(hitMoment, 1.4) * 0.25, shakeIntensity) * getShakeScale();
         }
         if (shakeAmount > 0.5) {
             const sx = (Math.random() - 0.5) * shakeAmount * 2;
