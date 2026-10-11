@@ -58,14 +58,11 @@
         </div>
       </section>
 
-      <!-- 播放设置（可折叠） -->
-      <WinExpander
-        class="settings-expander"
-        Header="播放设置"
-        Description="外观、音量、瀑布流与视觉特效"
-        Padding="0"
-        :IsExpanded="settingsExpanded"
-        @update:IsExpanded="setSettingsExpanded">
+      <!-- 播放设置 -->
+      <section class="win-card settings-card">
+        <div class="win-card-header">
+          <WinTextBlock Text="播放设置" FontWeight="600" />
+        </div>
         <div class="settings-body-compact">        <WinSettingsCard Header="外观" Description="浅色 / 深色 / 跟随系统">
           <WinComboBox
             :ItemsSource="themeItems"
@@ -176,7 +173,7 @@
           </div>
         </WinSettingsCard>
         </div>
-      </WinExpander>
+      </section>
 
       <!-- 音轨 -->
       <section class="win-card track-panel">
@@ -247,7 +244,6 @@ import WinProgressBar from './winui/components/WinProgressBar.vue'
 import WinToggleSwitch from './winui/components/WinToggleSwitch.vue'
 import WinSettingsCard from './winui/components/WinSettingsCard.vue'
 import WinComboBox from './winui/components/WinComboBox.vue'
-import WinExpander from './winui/components/WinExpander.vue'
 import { createMidiPlayer } from './player/player.js'
 
 interface TrackInfo {
@@ -301,15 +297,6 @@ function applyTheme(mode: 'light' | 'dark' | 'system', persist = true) {
 function setTheme(value: unknown) {
   if (value !== 'light' && value !== 'dark' && value !== 'system') return
   applyTheme(value)
-}
-
-/* ---------------- 设置区折叠 ---------------- */
-const SETTINGS_KEY = 'midiPlayer.settingsExpanded'
-const settingsExpanded = ref(true)
-
-function setSettingsExpanded(value: boolean) {
-  settingsExpanded.value = !!value
-  try { localStorage.setItem(SETTINGS_KEY, settingsExpanded.value ? '1' : '0') } catch (e) { }
 }
 
 let systemThemeQuery: MediaQueryList | null = null
@@ -508,12 +495,6 @@ onMounted(() => {
     stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system',
     false
   )
-
-  try {
-    const savedExpanded = localStorage.getItem(SETTINGS_KEY)
-    if (savedExpanded === '0') settingsExpanded.value = false
-    else if (savedExpanded === '1') settingsExpanded.value = true
-  } catch (e) { }
 
   systemThemeQuery = window.matchMedia('(prefers-color-scheme: dark)')
   systemThemeQuery.addEventListener('change', onSystemThemeChange)

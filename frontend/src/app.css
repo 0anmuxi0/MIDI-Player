@@ -166,28 +166,9 @@ body {
     font-family: 'Segoe Fluent Icons', 'Segoe MDL2 Assets', 'Segoe UI Symbol', sans-serif;
 }
 
-/* ==================== 可折叠设置区 ==================== */
-.app-content .settings-expander {
-    margin-bottom: 0;
-}
-
-.app-content .settings-expander .win-expander-header {
-    min-height: 38px;
-    padding: 0 12px;
-}
-
-.app-content .settings-expander .win-expander-header-text {
-    font-size: 13px;
-    line-height: 18px;
-}
-
-.app-content .settings-expander .win-expander-description {
-    font-size: 11px;
-    line-height: 15px;
-}
-
-.app-content .settings-expander .win-expander-content {
-    padding: 2px 6px 6px;
+/* ==================== 设置区（固定展开） ==================== */
+.settings-card {
+    padding: 0 0 8px;
 }
 
 /* 紧凑的设置行：按窗口宽度自动增减列数
@@ -387,18 +368,14 @@ body.fullscreen-active * {
     cursor: none !important;
 }
 
+/* 全屏时只保留画布：标题栏与内容区中除画布卡片外的一切都隐藏，
+   这样以后新增区块也不会漏掉 */
 body.pywebview-fullscreen .app-titlebar,
-body.pywebview-fullscreen .playback-card,
-body.pywebview-fullscreen .settings-card,
-body.pywebview-fullscreen .track-panel,
-body.pywebview-fullscreen .status-line,
-body.pywebview-fullscreen .hint-line,
+body.pywebview-fullscreen .app-content > *:not(.canvas-card),
+body.pywebview-fullscreen .canvas-fs-btn,
 body.fullscreen-active .app-titlebar,
-body.fullscreen-active .playback-card,
-body.fullscreen-active .settings-card,
-body.fullscreen-active .track-panel,
-body.fullscreen-active .status-line,
-body.fullscreen-active .hint-line {
+body.fullscreen-active .app-content > *:not(.canvas-card),
+body.fullscreen-active .canvas-fs-btn {
     display: none !important;
 }
 

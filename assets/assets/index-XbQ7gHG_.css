@@ -1928,171 +1928,6 @@ html.theme-light,.example-theme-wrapper.theme-light,.win-theme-scope.theme-light
   height: 10px;
 }
 
-
-.win-expander[data-v-7797d338] {
-  border: 1px solid var(--card-stroke);
-  border-radius: 4px;
-  margin-bottom: 4px;
-}
-.win-expander-header[data-v-7797d338] {
-  position: relative;
-  isolation: isolate;
-  width: 100%;
-  height: var(--win-expander-header-height, auto);
-  min-height: 48px;
-  padding: 0 16px;
-  box-sizing: border-box;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  cursor: pointer;
-  background: transparent;
-  border: none;
-  border-radius: 4px;
-  transition: background var(--fast-duration) var(--fast-out-slow-in);
-  color: var(--text-primary);
-  font-size: 14px;
-  text-align: left;
-}
-.win-expander-header[data-v-7797d338]::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  border-radius: inherit;
-  background: var(--win-expander-header-fill, var(--CardBackgroundFillColorDefaultBrush, var(--card-bg)));
-}
-.win-expander-header-main[data-v-7797d338] {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 0;
-  flex: 1;
-}
-.win-expander-header-icon[data-v-7797d338] {
-  width: 20px;
-  height: 20px;
-  max-width: 20px;
-  max-height: 20px;
-  margin: 0 20px 0 2px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--TextFillColorSecondaryBrush, var(--text-secondary));
-  font-size: 20px;
-  line-height: 20px;
-  flex-shrink: 0;
-}
-.win-expander-header-content[data-v-7797d338] {
-  min-width: 0;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-.win-expander-header-text[data-v-7797d338] {
-  color: var(--text-primary);
-  line-height: 20px;
-}
-.win-expander-description[data-v-7797d338] {
-  color: var(--TextFillColorSecondaryBrush, var(--text-secondary));
-  font-size: var(--SettingsCardDescriptionFontSize, 12px);
-  line-height: 16px;
-  margin-top: 0;
-}
-.win-expander.is-expanded .win-expander-header[data-v-7797d338] {
-  border-radius: 4px 4px 0 0;
-}
-.win-expander.expand-up[data-v-7797d338] {
-  display: flex;
-  flex-direction: column-reverse;
-}
-.win-expander.expand-up.is-expanded .win-expander-header[data-v-7797d338] {
-  border-radius: 0 0 4px 4px;
-}
-.win-expander-chevron[data-v-7797d338] {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  font-size: 12px;
-  transition: background var(--fast-duration) var(--fast-out-slow-in);
-  flex-shrink: 0;
-}
-.win-expander-header:hover .win-expander-chevron[data-v-7797d338] {
-  background: var(--subtle-secondary);
-}
-.win-expander-header:active .win-expander-chevron[data-v-7797d338] {
-  background: var(--subtle-tertiary);
-}
-.win-expander-arrow[data-v-7797d338] {
-  position: relative;
-  top: 0;
-  font-size: 12px;
-  display: block;
-  transition: transform var(--fast-duration) var(--fast-out-slow-in), top var(--fast-duration) var(--fast-out-slow-in);
-}
-.win-expander:not(.expand-up):not(.is-expanded) .win-expander-header:active .win-expander-arrow[data-v-7797d338],
-.win-expander.expand-up.is-expanded .win-expander-header:active .win-expander-arrow[data-v-7797d338] {
-  top: -1px;
-}
-.win-expander:not(.expand-up).is-expanded .win-expander-header:active .win-expander-arrow[data-v-7797d338],
-.win-expander.expand-up:not(.is-expanded) .win-expander-header:active .win-expander-arrow[data-v-7797d338] {
-  top: 1px;
-}
-.win-expander:not(.expand-up).is-expanded .win-expander-arrow[data-v-7797d338] {
-  transform: rotate(180deg);
-}
-.win-expander.expand-up.is-expanded .win-expander-arrow[data-v-7797d338] {
-  transform: rotate(0deg);
-}
-.win-expander.expand-up:not(.is-expanded) .win-expander-arrow[data-v-7797d338] {
-  transform: rotate(180deg);
-}
-.win-expander-grid[data-v-7797d338] {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows var(--normal-duration) var(--fast-out-slow-in);
-}
-.win-expander.is-expanded .win-expander-grid[data-v-7797d338] {
-  grid-template-rows: 1fr;
-}
-.win-expander-inner[data-v-7797d338] {
-  overflow: hidden;
-}
-.win-expander.is-expanded .win-expander-inner[data-v-7797d338] {
-  border-top: 1px solid var(--stroke-divider);
-}
-.win-expander.expand-up.is-expanded .win-expander-inner[data-v-7797d338] {
-  border-top: none;
-  border-bottom: 1px solid var(--stroke-divider);
-}
-.win-expander-content[data-v-7797d338] {
-  position: relative;
-  isolation: isolate;
-  min-height: 48px;
-  box-sizing: border-box;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  background: transparent;
-  border-radius: 0 0 3px 3px;
-}
-.win-expander-content[data-v-7797d338]::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  border-radius: inherit;
-  background: var(--win-expander-content-fill, var(--CardBackgroundFillColorSecondaryBrush, var(--card-bg-secondary)));
-}
-.win-expander.expand-up .win-expander-content[data-v-7797d338] {
-  border-radius: 3px 3px 0 0;
-}
 @property --app-bg {
   syntax: '<color>';
   inherits: true;
@@ -4051,28 +3886,9 @@ body {
     font-family: 'Segoe Fluent Icons', 'Segoe MDL2 Assets', 'Segoe UI Symbol', sans-serif;
 }
 
-/* ==================== 可折叠设置区 ==================== */
-.app-content .settings-expander {
-    margin-bottom: 0;
-}
-
-.app-content .settings-expander .win-expander-header {
-    min-height: 38px;
-    padding: 0 12px;
-}
-
-.app-content .settings-expander .win-expander-header-text {
-    font-size: 13px;
-    line-height: 18px;
-}
-
-.app-content .settings-expander .win-expander-description {
-    font-size: 11px;
-    line-height: 15px;
-}
-
-.app-content .settings-expander .win-expander-content {
-    padding: 2px 6px 6px;
+/* ==================== 设置区（固定展开） ==================== */
+.settings-card {
+    padding: 0 0 8px;
 }
 
 /* 紧凑的设置行：按窗口宽度自动增减列数
@@ -4272,18 +4088,14 @@ body.fullscreen-active * {
     cursor: none !important;
 }
 
+/* 全屏时只保留画布：标题栏与内容区中除画布卡片外的一切都隐藏，
+   这样以后新增区块也不会漏掉 */
 body.pywebview-fullscreen .app-titlebar,
-body.pywebview-fullscreen .playback-card,
-body.pywebview-fullscreen .settings-card,
-body.pywebview-fullscreen .track-panel,
-body.pywebview-fullscreen .status-line,
-body.pywebview-fullscreen .hint-line,
+body.pywebview-fullscreen .app-content > *:not(.canvas-card),
+body.pywebview-fullscreen .canvas-fs-btn,
 body.fullscreen-active .app-titlebar,
-body.fullscreen-active .playback-card,
-body.fullscreen-active .settings-card,
-body.fullscreen-active .track-panel,
-body.fullscreen-active .status-line,
-body.fullscreen-active .hint-line {
+body.fullscreen-active .app-content > *:not(.canvas-card),
+body.fullscreen-active .canvas-fs-btn {
     display: none !important;
 }
 
