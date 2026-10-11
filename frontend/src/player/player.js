@@ -1,3 +1,49 @@
+// ============================================================================
+// MIDI Player 引擎（与 UI 解耦的 ES 模块）
+//
+// 由原 assets/app.js 迁移而来：
+//   - 保留全部 Tone.js 音频调度、Canvas 瀑布流渲染、MIDI 解析算法与常量；
+//   - 移除全部 DOM 交互（元素查询、事件绑定、文本/HTML 写入、样式写入）；
+//   - UI 输入 -> setter 方法；UI 输出 -> hooks 回调。
+//
+// 依赖（全局对象，均通过 window 暴露）：window.Tone、window.Midi、window.Encoding
+// 使用方式：
+//   const player = createMidiPlayer({ canvas, wrapper, hooks });
+//   player.setLoop(true); await player.loadFile(file);
+// ============================================================================
+
+export function createMidiPlayer({ canvas, wrapper, hooks = {} } = {}) {
+    if (!canvas) throw new Error('createMidiPlayer: 必须传入 canvas 元素');
+
+    // ==================== UI 回调（全部可选，调用前判空） ====================
+    function callHook(name, ...args) {
+        const fn = hooks ? hooks[name] : undefined;
+        if (typeof fn !== 'function') return undefined;
+        try {
+            return fn(...args);
+        } catch (err) {
+            console.warn(`[midiPlayer] hooks.${name} 执行出错:`, err);
+            return undefined;
+        }
+    }
+
+    function onStatus(text) { callHook('onStatus', text); }
+    function onLoading(payload) { callHook('onLoading', payload); }
+    function onPlaying(payload) { callHook('onPlaying', payload); }
+    function onTime(payload) { callHook('onTime', payload); }
+    function onMeta(meta) { callHook('onMeta', meta); }
+    function onTracks(tracks) { callHook('onTracks', tracks); }
+    function onLoaded(payload) { callHook('onLoaded', payload); }
+    function onError(message) { callHook('onError', message); }
+    function onConfigLoaded(config) { callHook('onConfigLoaded', config); }
+
+    // 主题只影响画布配色，由 Vue 侧提供；缺省回退为深色
+    function isLightTheme() {
+        const fn = hooks ? hooks.isLightTheme : undefined;
+        if (typeof fn !== 'function') return false;
+        try { return !!fn(); } catch (err) { return false; }
+    }
+
     // MIDI标准乐器号（Program Number）到 GM 乐器名映射（0-127）
     const GM_PROGRAM_NAMES = [
         "Acoustic Grand Piano", "Bright Acoustic Piano", "Electric Grand Piano", "Honky-tonk Piano", "Electric Piano 1", "Electric Piano 2", "Harpsichord", "Clavinet",
@@ -195,183 +241,46 @@
         }
     }
 
-    // ==================== 加载进度控制 ====================
+    // ==================== 加载进度（改为 hooks 输出） ====================
+    let loadingPercent = 0;
+    let hideLoadingTimer = 0;
+
     function showLoading() {
-        if (loadingOverlay) {
-            loadingOverlay.style.display = 'flex';
-            updateLoadingProgress(0);
-        }
+        loadingPercent = 0;
+        onLoading({ visible: true, percent: 0 });
     }
 
     function hideLoading() {
-        if (loadingOverlay) {
-            loadingOverlay.style.display = 'none';
-        }
+        onLoading({ visible: false, percent: Math.round(loadingPercent) });
     }
 
     function updateLoadingProgress(percent) {
-        if (loadingProgressBar && loadingPercentage) {
-            const roundedPercent = Math.round(percent);
-            loadingProgressBar.style.width = `${percent}%`;
-            loadingPercentage.textContent = `${roundedPercent}%`;
-        }
+        loadingPercent = percent;
+        onLoading({ visible: true, percent: percent });
     }
 
-    // ==================== DOM ====================
-    const canvas = document.getElementById('canvas');
-    const canvasWrapper = document.getElementById('canvasWrapper');
-    const canvasFsBtn = document.getElementById('canvasFsBtn');
+    // ==================== 画布与设置 ====================
     const ctx = canvas.getContext('2d');
-    const fileInput = document.getElementById('fileInput');
-    const playBtn = document.getElementById('playBtn');
-    const loopBtn = document.getElementById('loopBtn');
-    const playbackRateSlider = document.getElementById('playbackRateSlider');
-    const playbackRateValue = document.getElementById('playbackRateValue');
-    const statusEl = document.getElementById('status');
-    const loadingOverlay = document.getElementById('loadingOverlay');
-    const loadingProgressBar = document.getElementById('loadingProgressBar');
-    const loadingPercentage = document.getElementById('loadingPercentage');
-    const particleToggle = document.getElementById('particleToggle');
-    const glowToggle = document.getElementById('glowToggle');
-    const particleLimitSlider = document.getElementById('particleLimitSlider');
-    const particleLimitValue = document.getElementById('particleLimitValue');
-    const unlimitedParticlesToggle = document.getElementById('unlimitedParticlesToggle');
-    const shakeToggle = document.getElementById('shakeToggle');
-    const shakeIntensitySlider = document.getElementById('shakeIntensitySlider');
-    const shakeIntensityValue = document.getElementById('shakeIntensityValue');
 
     canvas.width = WIDTH;
     canvas.height = HEIGHT;
 
-    function isLightTheme() {
-        return true; // 始终浅色模式
-    }
-
-    function resizeCanvas(width, height) {
-        WIDTH = Math.max(320, Math.round(width));
-        HEIGHT = Math.max(240, Math.round(height));
-        canvas.width = WIDTH;
-        canvas.height = HEIGHT;
-        drawFrame(currentTime);
-    }
-
-    function updateCanvasSizeForCurrentMode() {
-        if (document.fullscreenElement === canvasWrapper && canvasWrapper) {
-            const rect = canvasWrapper.getBoundingClientRect();
-            resizeCanvas(rect.width, rect.height);
-            return;
-        }
-        const defaultSize = getDefaultCanvasSize();
-        resizeCanvas(defaultSize.width, defaultSize.height);
-    }
-
-    async function toggleCanvasFullscreen() {
-        if (!canvasWrapper) return;
-        if (typeof window.pywebview !== 'undefined') {
-            pywebview.api.fs().then((ret) => {
-                if (ret === 'fullscreen') {
-                    document.body.classList.add('pywebview-fullscreen');
-                    if (canvasFsBtn) canvasFsBtn.style.display = 'none';
-                    setTimeout(() => window.dispatchEvent(new Event('resize')), 200);
-                } else if (ret === 'windowed') {
-                    document.body.classList.remove('pywebview-fullscreen');
-                    if (canvasFsBtn) canvasFsBtn.style.display = 'block';
-                    setTimeout(() => window.dispatchEvent(new Event('resize')), 200);
-                }
-            }).catch((e) => {
-                console.warn('pywebview fs error:', e);
-            });
-            return;
-        }
-        // 浏览器环境：使用 HTML5 全屏
-        try {
-            if (document.fullscreenElement === canvasWrapper) {
-                await document.exitFullscreen();
-            } else {
-                await canvasWrapper.requestFullscreen();
-            }
-        } catch (err) {
-            statusEl.textContent = `全屏切换失败: ${err.message}`;
-        }
-    }
-
-    if (canvasFsBtn) {
-        canvasFsBtn.addEventListener('click', toggleCanvasFullscreen);
-    }
-
-    document.addEventListener('fullscreenchange', () => {
-        const isFullscreen = document.fullscreenElement === canvasWrapper;
-        if (canvasWrapper) {
-            canvasWrapper.classList.toggle('fullscreen', isFullscreen);
-        }
-        if (canvasFsBtn) {
-            canvasFsBtn.style.display = isFullscreen ? 'none' : 'block';
-        }
-        // 强制隐藏/恢复鼠标
-        document.body.style.cursor = isFullscreen ? 'none' : '';
-        if (isFullscreen) {
-            // 每 100ms 强制设置一次光标，防止被覆盖
-            const keepHidden = () => {
-                if (!document.fullscreenElement) {
-                    document.body.style.cursor = '';
-                    return;
-                }
-                document.body.style.cursor = 'none';
-                requestAnimationFrame(keepHidden);
-            };
-            requestAnimationFrame(keepHidden);
-        }
-        updateCanvasSizeForCurrentMode();
-        // 退出全屏后强制立即绘制白色背景，防止黑色闪烁
-        requestAnimationFrame(() => drawFrame(currentTime));
-    });
-
-    let resizeTimer;
-    window.addEventListener('resize', () => {
-        updateCanvasSizeForCurrentMode();
-        clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(() => {
-            fetch('/api/config', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ windowWidth: window.innerWidth, windowHeight: window.innerHeight })
-            }).catch(() => {});
-        }, 500);
-    });
-
-    // ==================== 瀑布流方向控制 ====================
-    let flowDirection = 'horizontal';
-    const directionButtons = document.querySelectorAll('.direction-btn');
-
-    function setFlowDirection(direction) {
-        flowDirection = direction;
-        directionButtons.forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.direction === direction);
-        });
-        saveConfig();
-        if (!isPlaying && typeof currentTime !== 'undefined') {
-            drawFrame(currentTime);
-        }
-    }
-
-    if (directionButtons.length > 0) {
-        directionButtons.forEach(btn => {
-            btn.addEventListener('click', () => {
-                const nextDirection = btn.dataset.direction;
-                if (nextDirection) setFlowDirection(nextDirection);
-            });
-        });
-        directionButtons.forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.direction === flowDirection);
-        });
-    }
-
-    function midiToX(midi) {
-        const range = window.midiRange || { min: 48, max: 84 };
-        const availableWidth = WIDTH - 2 * MARGIN;
-        const normalized = (midi - range.min) / (range.max - range.min);
-        return MARGIN + normalized * availableWidth;
-    }
+    // 单一设置来源：所有 setter 先更新它，再触发重绘 / saveConfig()
+    const settings = {
+        volume: -6,
+        speed: DEFAULT_SPEED,
+        playbackRate: 1,
+        hitLinePosition: 0.5,
+        direction: 'horizontal',
+        particles: true,
+        glow: true,
+        shake: true,
+        shakeIntensity: 4,
+        particleLimit: 1024,
+        info: true,
+        velocity: true,
+        theme: 'system'
+    };
 
     // ==================== 状态 ====================
     let notes = [];
@@ -379,8 +288,13 @@
     let isPlaying = false;
     let currentTime = 0;
     let totalDuration = 0;
-    let isDraggingProgress = false;
     let isLoopEnabled = false;
+    let loadedFileName = null;
+    // 瀑布流方向：'horizontal' | 'vertical'
+    let flowDirection = 'horizontal';
+    // 渲染循环 / 过渡动画的 requestAnimationFrame 句柄（destroy 时可取消）
+    let renderRaf = 0;
+    let transitionRaf = 0;
 
     // ==================== 特效开关状态 ====================
     let enableParticles = true;  // 粒子特效开关
@@ -418,146 +332,11 @@
         let totalNotes = 0;
         midi.tracks.forEach(track => { totalNotes += track.notes.length; });
         midiMeta = { fileName, bpm, timeSig, keySig, totalNotes };
-        updateMidiInfo();
+        onMeta(midiMeta);
     }
 
-    function updateMidiInfo() {
-        const midiInfoEl = document.getElementById('midiInfo');
-        if (!midiMeta) {
-            midiInfoEl.innerHTML = '<span class="midi-info-empty">加载 MIDI 文件后显示文件信息</span>';
-            return;
-        }
-        midiInfoEl.innerHTML = `
-            <svg class="midi-icon" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
-            </svg>
-            <span class="midi-filename">${midiMeta.fileName}</span>
-            <span class="midi-divider">|</span>
-            <span class="midi-meta">${midiMeta.timeSig}</span>
-            <span class="midi-divider">|</span>
-            <span class="midi-meta">${midiMeta.bpm} BPM</span>
-            <span class="midi-divider">|</span>
-            <span class="midi-meta">${midiMeta.keySig} 大调</span>
-            <span class="midi-divider">|</span>
-            <span class="midi-meta">${midiMeta.totalNotes} 个音符</span>
-        `;
-    }
-
-    function getTrackAutoLabel(track) {
-        if (track.isPercussion) return '自动（MIDI）: Standard Drum Kit';
-        if (typeof track.gmProgram === 'number' && GM_PROGRAM_NAMES[track.gmProgram]) return `自动（MIDI）: GM ${track.gmProgram + 1} ${GM_PROGRAM_NAMES[track.gmProgram]}`;
-        return '自动（MIDI）: 默认音色';
-    }
-
-    function buildTrackInstrumentOptions(track) {
-        const sampleOptions = [
-            { value: 'piano', label: '钢琴' },
-            { value: 'violin', label: '小提琴' },
-            { value: 'viola', label: '中提琴' },
-            { value: 'cello', label: '大提琴' },
-            { value: 'piccolo', label: '短笛' },
-            { value: 'flute', label: '长笛' },
-            { value: 'acoustic_guitar', label: '吉他' },
-            { value: 'music_box', label: '八音盒' },
-            { value: 'shamisen', label: '三味线' },
-            { value: 'voice', label: '人声' }
-        ];
-        const synthOptions = [
-            { value: 'default', label: '正弦合成器' },
-            { value: 'fm', label: 'FM 电钢琴' },
-            { value: 'am', label: 'AM 复古' },
-            { value: 'fat', label: '胖锯齿波' }
-        ];
-        const autoHtml = `<option value="midi_auto">${getTrackAutoLabel(track)}</option>`;
-        const sampleHtml = sampleOptions.map(opt => `<option value="${opt.value}">${opt.label}</option>`).join('');
-        const synthHtml = synthOptions.map(opt => `<option value="${opt.value}">${opt.label}</option>`).join('');
-        const gmItems = GM_PROGRAM_NAMES.map((name, idx) => `<option value="gm:${idx}">GM ${idx + 1}: ${name}</option>`).join('');
-        const gmHtml = `<optgroup label="GM 标准音色">${gmItems}</optgroup>`;
-        return `${autoHtml}<optgroup label="采样音色（需加载）">${sampleHtml}</optgroup><optgroup label="合成器音色">${synthHtml}</optgroup>${gmHtml}`;
-    }
-
-    function initTrackPanel() {
-        const trackPanel = document.getElementById('trackPanel');
-        const trackList = document.getElementById('trackList');
-        const oldToolbar = trackPanel.querySelector('.track-instrument-toolbar');
-        if (oldToolbar) oldToolbar.remove();
-
-        if (trackInfo.length === 0) {
-            trackList.innerHTML = '<p class="track-empty">加载 MIDI 文件后显示音轨信息</p>';
-            return;
-        }
-        trackList.innerHTML = '';
-
-        trackInfo.forEach((track, index) => {
-            const trackEl = document.createElement('div');
-            trackEl.className = 'track-item';
-            trackEl.innerHTML = `
-                <label class="track-toggle">
-                    <input type="checkbox" data-track="${index}" ${track.enabled ? 'checked' : ''}>
-                    <span class="track-checkbox" style="--track-hue: ${track.hue}"></span>
-                </label>
-                <span class="track-name" style="--track-hue: ${track.hue}">${track.name}</span>
-                <span class="track-instrument-name" style="margin-left:4px;color:#888;font-size:13px;">${track.instrumentName ? '（' + track.instrumentName + '）' : ''}</span>
-                <span class="track-sep">-</span>
-                <span class="track-notes">${track.noteCount}个</span>
-                <span class="track-sep">-</span>
-                <span class="track-range">${track.noteRange}</span>
-                <select class="track-instrument-select" data-track="${index}">
-                    ${buildTrackInstrumentOptions(track)}
-                </select>
-                <span class="track-sep">-</span>
-                <div class="track-volume-control">
-                    <input type="range" class="track-volume-slider" data-track="${index}" 
-                        min="0" max="2" step="0.05" value="${track.volume}" 
-                        style="--track-hue: ${track.hue}" title="调整音轨音量">
-                    <span class="track-volume-value" id="volumeValue_${index}">${Math.round(track.volume * 100)}%</span>
-                    ${track.cc7Events.length > 0 ? `<span class="cc7-indicator" title="MIDI CC7事件: ${track.cc7Events.map(e => e.percent + '%').join(', ')}">🎚️ ${track.cc7Events.length}个</span>` : ''}
-                </div>
-            `;
-            const instSelect = trackEl.querySelector('.track-instrument-select');
-            instSelect.value = track.instrument;
-            instSelect.addEventListener('change', async (e) => {
-                const trackIndex = parseInt(e.target.dataset.track);
-                const selectedType = e.target.value;
-                trackInfo[trackIndex].instrument = selectedType;
-                const resolvedType = getTrackResolvedInstrumentType(trackInfo[trackIndex]);
-                if (resolvedType) {
-                    statusEl.textContent = `加载音轨音色中...`;
-                    await getInstrumentInstance(resolvedType);
-                    statusEl.textContent = `音轨 ${trackInfo[trackIndex].name} 音色就绪`;
-                }
-            });
-            const checkbox = trackEl.querySelector('input[type="checkbox"]');
-            checkbox.addEventListener('change', (e) => {
-                const trackIndex = parseInt(e.target.dataset.track);
-                trackInfo[trackIndex].enabled = e.target.checked;
-                if (!isPlaying) drawFrame(currentTime);
-            });
-            const volumeSlider = trackEl.querySelector('.track-volume-slider');
-            const volumeValue = trackEl.querySelector('.track-volume-value');
-            
-            volumeSlider.addEventListener('input', (e) => {
-                const trackIndex = parseInt(e.target.dataset.track);
-                const newVolume = parseFloat(e.target.value);
-                trackInfo[trackIndex].volume = newVolume;
-                
-                // 更新显示的百分比
-                if (volumeValue) {
-                    volumeValue.textContent = Math.round(newVolume * 100) + '%';
-                }
-                
-                // 当音量设为0时，自动关闭该音轨的开关按钮
-                if (newVolume === 0) {
-                    const checkbox = trackEl.querySelector('input[type="checkbox"]');
-                    if (checkbox && checkbox.checked) {
-                        checkbox.checked = false;
-                        trackInfo[trackIndex].enabled = false;
-                        if (!isPlaying) drawFrame(currentTime);
-                    }
-                }
-            });
-            trackList.appendChild(trackEl);
-        });
+    function emitTracks() {
+        onTracks(trackInfo);
     }
 
     function midiToNoteName(midi) {
@@ -609,11 +388,11 @@
                     if (note.midi > maxMidi) maxMidi = note.midi;
                 });
                 const noteRange = `${midiToNoteName(minMidi)} - ${midiToNoteName(maxMidi)}`;
-                
+
                 // 提取轨道音量事件（CC7 - Channel Volume）
                 let initialVolume = 1.0; // 默认音量
                 let cc7Events = []; // CC7事件列表
-                
+
                 if (Array.isArray(track.controlChanges) && track.controlChanges[7]) {
                     // CC7是主控音量，值范围0-127
                     const volumeEvents = track.controlChanges[7];
@@ -621,7 +400,7 @@
                         // 使用第一个音量事件作为初始音量
                         const firstVolumeEvent = volumeEvents[0];
                         initialVolume = firstVolumeEvent.value / 127.0;
-                        
+
                         // 记录所有CC7事件用于展示
                         cc7Events = volumeEvents.map(event => ({
                             time: event.time,
@@ -630,9 +409,9 @@
                         }));
                     }
                 }
-                
+
                 trackInfo.push({
-                    name, instrumentName: instrumentName || '', noteCount: track.notes.length, noteRange, 
+                    name, instrumentName: instrumentName || '', noteCount: track.notes.length, noteRange,
                     enabled: true, volume: initialVolume,
                     instrument: 'midi_auto', gmProgram: trackProgramInfo.program, isPercussion: trackProgramInfo.isPercussion,
                     hue: trackHues[trackIndex % trackHues.length],
@@ -641,37 +420,24 @@
                 trackIndex++;
             }
         });
-        initTrackPanel();
+        emitTracks();
     }
 
-    // ==================== 小节线 ====================
-    const infoToggle = document.getElementById('infoToggle');
-    infoToggle.addEventListener('change', (e) => {
-        targetExtraInfoAlpha = e.target.checked ? 1 : 0;
-        if (!isPlaying) animateTransition();
-        saveConfig();
-    });
-
-    const velocityToggle = document.getElementById('velocityToggle');
-    if (velocityToggle) {
-        velocityToggle.addEventListener('change', (e) => {
-            showVelocity = e.target.checked;
-            if (!isPlaying) drawFrame(currentTime);
-            saveConfig();
-        });
-    }
-    function animateTransition() {
-        if (Math.abs(currentExtraInfoAlpha - targetExtraInfoAlpha) > 0.01) {
-            drawFrame(currentTime);
-            requestAnimationFrame(animateTransition);
-        } else {
-            currentExtraInfoAlpha = targetExtraInfoAlpha;
-            drawFrame(currentTime);
-        }
-    }
+    // ==================== 小节线信息显示过渡 ====================
     let targetExtraInfoAlpha = 1;
     let currentExtraInfoAlpha = 1;
     const FADE_SPEED = 0.05;
+
+    function animateTransition() {
+        if (Math.abs(currentExtraInfoAlpha - targetExtraInfoAlpha) > 0.01) {
+            drawFrame(currentTime);
+            transitionRaf = requestAnimationFrame(animateTransition);
+        } else {
+            currentExtraInfoAlpha = targetExtraInfoAlpha;
+            transitionRaf = 0;
+            drawFrame(currentTime);
+        }
+    }
 
     // ==================== 音频 ====================
     const LOCAL_SF = window.location.origin + '/api/soundfonts/';
@@ -715,7 +481,7 @@
         });
         const loadList = Array.from(typesToLoad);
         for (let i = 0; i < loadList.length; i++) {
-            statusEl.textContent = `正在加载 MIDI 音库 ${i + 1}/${loadList.length}...`;
+            onStatus(`正在加载 MIDI 音库 ${i + 1}/${loadList.length}...`);
             await getInstrumentInstance(loadList[i]);
         }
     }
@@ -731,26 +497,26 @@
             if (!gmId) inst = new Tone.PolySynth(Tone.Synth, { maxPolyphony: currentMaxPolyphony });
             else {
                 const gmName = GM_PROGRAM_NAMES[program] || gmId;
-                statusEl.textContent = `正在加载 GM 音色: ${gmName}...`;
-                inst = new Tone.Sampler({ urls: GM_SPARSE_SAMPLE_URLS, release: 1.1, baseUrl: `${GM_SOUNDFONT_BASE_URL}${gmId}-mp3/`, onload: () => { statusEl.textContent = `GM 音色已就绪: ${gmName}`; inst.volume.value = 6; } });
+                onStatus(`正在加载 GM 音色: ${gmName}...`);
+                inst = new Tone.Sampler({ urls: GM_SPARSE_SAMPLE_URLS, release: 1.1, baseUrl: `${GM_SOUNDFONT_BASE_URL}${gmId}-mp3/`, onload: () => { onStatus(`GM 音色已就绪: ${gmName}`); inst.volume.value = 6; } });
             }
         } else if (type === 'fm') inst = new Tone.PolySynth(Tone.FMSynth, { maxPolyphony: currentMaxPolyphony });
         else if (type === 'am') inst = new Tone.PolySynth(Tone.AMSynth, { maxPolyphony: currentMaxPolyphony });
         else if (type === 'fat') inst = new Tone.PolySynth(Tone.Synth, { maxPolyphony: currentMaxPolyphony, oscillator: { type: "fatsawtooth" } });
         else if (type === 'piano') {
-            statusEl.textContent = '正在加载 钢琴 采样...';
+            onStatus('正在加载 钢琴 采样...');
             inst = new Tone.Sampler({
                 urls: { "A0": "A0.mp3", "C1": "C1.mp3", "D#1": "Ds1.mp3", "F#1": "Fs1.mp3", "A1": "A1.mp3", "C2": "C2.mp3", "D#2": "Ds2.mp3", "F#2": "Fs2.mp3", "A2": "A2.mp3", "C3": "C3.mp3", "D#3": "Ds3.mp3", "F#3": "Fs3.mp3", "A3": "A3.mp3", "C4": "C4.mp3", "D#4": "Ds4.mp3", "F#4": "Fs4.mp3", "A4": "A4.mp3", "C5": "C5.mp3", "D#5": "Ds5.mp3", "F#5": "Fs5.mp3", "A5": "A5.mp3", "C6": "C6.mp3", "D#6": "Ds6.mp3", "F#6": "Fs6.mp3", "A6": "A6.mp3", "C7": "C7.mp3", "D#7": "Ds7.mp3", "F#7": "Fs7.mp3", "A7": "A7.mp3", "C8": "C8.mp3" },
                 release: 1.2, baseUrl: LOCAL_SF + "salamander/",
-                onload: () => { statusEl.textContent = '钢琴音色就绪 (Salamander 三角钢琴)'; inst.connect(reverb); inst.volume.value = 3; }
+                onload: () => { onStatus('钢琴音色就绪 (Salamander 三角钢琴)'); inst.connect(reverb); inst.volume.value = 3; }
             });
         } else if (type in SAMPLER_CONFIGS) {
             const config = SAMPLER_CONFIGS[type];
-            statusEl.textContent = `正在加载 ${config.name} 采样...`;
+            onStatus(`正在加载 ${config.name} 采样...`);
             inst = new Tone.Sampler({
                 urls: { "A0": "A0.mp3", "B0": "B0.mp3", "C1": "C1.mp3", "D1": "D1.mp3", "E1": "E1.mp3", "F1": "F1.mp3", "G1": "G1.mp3", "A1": "A1.mp3", "B1": "B1.mp3", "C2": "C2.mp3", "D2": "D2.mp3", "E2": "E2.mp3", "F2": "F2.mp3", "G2": "G2.mp3", "A2": "A2.mp3", "B2": "B2.mp3", "C3": "C3.mp3", "D3": "D3.mp3", "E3": "E3.mp3", "F3": "F3.mp3", "G3": "G3.mp3", "A3": "A3.mp3", "B3": "B3.mp3", "C4": "C4.mp3", "D4": "D4.mp3", "E4": "E4.mp3", "F4": "F4.mp3", "G4": "G4.mp3", "A4": "A4.mp3", "B4": "B4.mp3", "C5": "C5.mp3", "D5": "D5.mp3", "E5": "E5.mp3", "F5": "F5.mp3", "G5": "G5.mp3", "A5": "A5.mp3", "B5": "B5.mp3", "C6": "C6.mp3", "D6": "D6.mp3", "E6": "E6.mp3", "F6": "F6.mp3", "G6": "G6.mp3", "A6": "A6.mp3", "B6": "B6.mp3", "C7": "C7.mp3", "D7": "D7.mp3", "E7": "E7.mp3", "F7": "F7.mp3", "G7": "G7.mp3", "A7": "A7.mp3", "B7": "B7.mp3", "C8": "C8.mp3", "G#1": "Ab1.mp3", "A#0": "Bb0.mp3", "C#1": "Db1.mp3", "D#1": "Eb1.mp3", "F#1": "Gb1.mp3", "G#2": "Ab2.mp3", "A#1": "Bb1.mp3", "C#2": "Db2.mp3", "D#2": "Eb2.mp3", "F#2": "Gb2.mp3", "G#3": "Ab3.mp3", "A#2": "Bb2.mp3", "C#3": "Db3.mp3", "D#3": "Eb3.mp3", "F#3": "Gb3.mp3", "G#4": "Ab4.mp3", "A#3": "Bb3.mp3", "C#4": "Db4.mp3", "D#4": "Eb4.mp3", "F#4": "Gb4.mp3", "G#5": "Ab5.mp3", "A#4": "Bb4.mp3", "C#5": "Db5.mp3", "D#5": "Eb5.mp3", "F#5": "Gb5.mp3", "G#6": "Ab6.mp3", "A#5": "Bb5.mp3", "C#6": "Db6.mp3", "D#6": "Eb6.mp3", "F#6": "Gb6.mp3", "G#7": "Ab7.mp3", "A#6": "Bb6.mp3", "C#7": "Db7.mp3", "D#7": "Eb7.mp3", "F#7": "Gb7.mp3", "A#7": "Bb7" },
                 release: 1.2, baseUrl: config.baseUrl,
-                onload: () => { statusEl.textContent = `${config.name} 音色就绪`; inst.connect(reverb); inst.volume.value = config.enhance; }
+                onload: () => { onStatus(`${config.name} 音色就绪`); inst.connect(reverb); inst.volume.value = config.enhance; }
             });
         } else {
             inst = new Tone.PolySynth(Tone.Synth, { maxPolyphony: currentMaxPolyphony });
@@ -764,123 +530,10 @@
         return inst;
     }
 
+    // 注：原实现在此同步滑块数值文本，现已交由 Vue 侧展示
     function applyPlaybackRate() {
-        if (playbackRateValue) {
-            const rateText = Number.isInteger(playbackRate) ? playbackRate.toFixed(1) : playbackRate.toString();
-            playbackRateValue.textContent = `×${rateText}`;
-        }
         if (isPlaying && notes.length > 0) scheduleTransportFrom(currentTime);
     }
-
-    if (playbackRateSlider) {
-        const initialRate = parseFloat(playbackRateSlider.value);
-        playbackRate = Number.isFinite(initialRate) && initialRate > 0 ? initialRate : 1;
-        playbackRateSlider.addEventListener('input', (e) => { const rate = parseFloat(e.target.value); playbackRate = Number.isFinite(rate) && rate > 0 ? rate : 1; applyPlaybackRate(); saveConfig(); });
-        playbackRateSlider.addEventListener('change', () => { statusEl.textContent = `播放速度已设置为 ×${playbackRate}`; });
-    }
-    applyPlaybackRate();
-    updateLoopButtonUI();
-
-    if (loopBtn) {
-        loopBtn.addEventListener('click', () => { isLoopEnabled = !isLoopEnabled; updateLoopButtonUI(); if (isPlaying && notes.length > 0) scheduleTransportFrom(currentTime); });
-    }
-
-    // ==================== 音量控制 ====================
-    const volumeSlider = document.getElementById('volumeSlider');
-    const volumeValue = document.getElementById('volumeValue');
-    function updateVolume() {
-        const dbValue = parseFloat(volumeSlider.value);
-        if (masterVolume && !masterVolume.disposed) masterVolume.volume.value = dbValue;
-        volumeValue.textContent = dbValue + ' dB';
-    }
-    volumeSlider.addEventListener('input', () => { updateVolume(); saveConfig(); });
-    updateVolume();
-
-    // ==================== 速度控制 ====================
-    const speedSlider = document.getElementById('speedSlider');
-    const speedValue = document.getElementById('speedValue');
-    speedSlider.addEventListener('input', () => { SPEED = parseInt(speedSlider.value); speedValue.textContent = SPEED; saveConfig(); });
-
-    // ==================== 判定线位置控制 ====================
-    const hitLinePositionSlider = document.getElementById('hitLinePositionSlider');
-    const hitLinePositionValue = document.getElementById('hitLinePositionValue');
-    hitLinePositionSlider.addEventListener('input', () => {
-        hitLinePosition = parseFloat(hitLinePositionSlider.value);
-        hitLinePositionValue.textContent = Math.round(hitLinePosition * 100) + '%';
-        saveConfig();
-    });
-
-    // ==================== 特效开关事件监听器 ====================
-    if (particleToggle) {
-        particleToggle.addEventListener('change', (e) => {
-            enableParticles = e.target.checked;
-            if (!enableParticles) particles = [];
-            saveConfig();
-        });
-    }
-
-    if (glowToggle) {
-        glowToggle.addEventListener('change', (e) => {
-            enableGlow = e.target.checked;
-            saveConfig();
-        });
-    }
-
-    // ==================== 屏幕震动控制 ====================
-    if (shakeToggle) {
-        shakeToggle.addEventListener('change', (e) => {
-            enableShake = e.target.checked;
-            saveConfig();
-        });
-    }
-
-    if (shakeIntensitySlider) {
-        shakeIntensitySlider.addEventListener('input', (e) => {
-            shakeIntensity = parseFloat(e.target.value);
-            shakeIntensityValue.textContent = shakeIntensity;
-            saveConfig();
-        });
-    }
-
-    if (particleLimitSlider) {
-        particleLimitSlider.addEventListener('input', (e) => {
-            const limit = parseInt(e.target.value);
-            if (limit >= 2048) {
-                unlimitedParticles = true;
-                maxParticlesPerFrame = Infinity;
-                particleLimitValue.textContent = '∞';
-                if (unlimitedParticlesToggle) unlimitedParticlesToggle.checked = true;
-            } else {
-                unlimitedParticles = false;
-                maxParticlesPerFrame = Number.isFinite(limit) && limit > 0 ? limit : 1024;
-                particleLimitValue.textContent = maxParticlesPerFrame;
-                if (unlimitedParticlesToggle) unlimitedParticlesToggle.checked = false;
-            }
-            saveConfig();
-        });
-    }
-
-    if (unlimitedParticlesToggle) {
-        unlimitedParticlesToggle.addEventListener('change', (e) => {
-            unlimitedParticles = e.target.checked;
-            if (unlimitedParticles) {
-                maxParticlesPerFrame = Infinity;
-                particleLimitValue.textContent = '∞';
-                particleLimitSlider.value = 2176; // 将滑块推到最右
-            } else {
-                maxParticlesPerFrame = 1024;
-                particleLimitValue.textContent = maxParticlesPerFrame;
-                particleLimitSlider.value = 1024; // 恢复到默认值
-            }
-        });
-    }
-
-    // ==================== 力度显示设置 ====================
-    let showVelocity = true;   // 力度显示开关
-
-    // ==================== 小节线显示设置 ====================
-    let showMeasureLines = true;
-    let measureLineAlpha = 0.3;
 
     // ==================== 核心：网格解析引擎 ====================
     function parseMidiGrid(midi) {
@@ -922,34 +575,17 @@
         return lines;
     }
 
-    // ==================== 进度条控制 ====================
-    const progressSlider = document.getElementById('progressSlider');
-    const currentTimeEl = document.getElementById('currentTime');
-    const totalTimeEl = document.getElementById('totalTime');
-
+    // ==================== 进度输出 ====================
     function getEffectivePlaybackRate() { return Number.isFinite(playbackRate) && playbackRate > 0 ? playbackRate : 1; }
     function toTransportTime(songTime) { return songTime / getEffectivePlaybackRate(); }
     function toSongTime(transportTime) { return transportTime * getEffectivePlaybackRate(); }
-    function formatTime(seconds) { const mins = Math.floor(seconds / 60); const secs = Math.floor(seconds % 60); return `${mins}:${secs.toString().padStart(2, '0')}`; }
 
     function updateProgressUI() {
         if (totalDuration > 0) {
-            const progress = (currentTime / totalDuration) * 100;
-            if (!isDraggingProgress) progressSlider.value = progress;
-            currentTimeEl.textContent = formatTime(currentTime);
-            totalTimeEl.textContent = formatTime(totalDuration);
+            onTime({ current: currentTime, total: totalDuration });
         } else {
-            if (!isDraggingProgress) progressSlider.value = 0;
-            currentTimeEl.textContent = '0:00';
-            totalTimeEl.textContent = '0:00';
+            onTime({ current: 0, total: 0 });
         }
-    }
-
-    function updateLoopButtonUI() {
-        if (!loopBtn) return;
-        loopBtn.classList.toggle('active', isLoopEnabled);
-        loopBtn.setAttribute('aria-pressed', isLoopEnabled ? 'true' : 'false');
-        loopBtn.title = isLoopEnabled ? '循环播放：开启' : '循环播放：关闭';
     }
 
     function scheduleTransportFrom(songStartTime) {
@@ -967,25 +603,6 @@
         Tone.Transport.start(undefined, toTransportTime(songStartTime));
     }
 
-    progressSlider.addEventListener('mousedown', () => isDraggingProgress = true);
-    progressSlider.addEventListener('touchstart', () => isDraggingProgress = true, { passive: true });
-
-    function handleSeekEnd() {
-        if (notes.length > 0 && gridLines.length > 0) {
-            const percent = parseFloat(progressSlider.value);
-            const rawSeekTime = (percent / 100) * totalDuration;
-            let snappedTime = gridLines.filter(line => line.isMeasure).reduce((prev, curr) => (Math.abs(curr.time - rawSeekTime) < Math.abs(prev.time - rawSeekTime) ? curr : prev)).time;
-            currentTime = snappedTime;
-            progressSlider.value = (currentTime / totalDuration) * 100;
-            if (isPlaying) scheduleTransportFrom(currentTime);
-            else drawFrame(currentTime);
-        }
-        isDraggingProgress = false;
-        updateProgressUI();
-    }
-    progressSlider.addEventListener('mouseup', handleSeekEnd);
-    progressSlider.addEventListener('touchend', handleSeekEnd);
-
     // ==================== 工具：停止并清理 ====================
     function resetPlaybackState(resetToStart = true) {
         isPlaying = false;
@@ -994,43 +611,44 @@
         Tone.Transport.cancel();
         if (resetToStart) currentTime = 0;
         particles = [];
-        document.getElementById('playIcon').innerHTML = '<polygon points="5,3 19,12 5,21"/>';
+        if (renderRaf) { cancelAnimationFrame(renderRaf); renderRaf = 0; }
         updateProgressUI();
     }
 
     function clearLoadedMidiData() {
-        notes = []; gridLines = []; totalDuration = 0; currentTime = 0; playBtn.disabled = true;
-        trackInfo = []; midiMeta = null; updateMidiInfo(); initTrackPanel(); updateProgressUI(); drawFrame(0);
+        notes = []; gridLines = []; totalDuration = 0; currentTime = 0;
+        trackInfo = []; midiMeta = null; loadedFileName = null;
+        onMeta(null); emitTracks(); updateProgressUI(); drawFrame(0);
     }
 
     function stopAndClear() { resetPlaybackState(true); clearLoadedMidiData(); }
 
     // ==================== 加载 MIDI ====================
-    async function loadMidiFile(file) {
+    async function loadFile(file) {
         if (!file) return;
         stopAndClear();
         showLoading();
-        statusEl.textContent = '正在加载...';
-        
+        onStatus('正在加载...');
+
         try {
             updateLoadingProgress(10);
             const buffer = await file.arrayBuffer();
-            
+
             updateLoadingProgress(30);
             const midi = new Midi(buffer);
-            
+
             updateLoadingProgress(50);
             gridLines = parseMidiGrid(midi);
             extractMidiMeta(midi, file.name);
-            
+
             updateLoadingProgress(60);
             notes = [];
             let minMidi = 127, maxMidi = 0, trackIndex = 0;
             extractTrackInfo(midi);
-            
+
             updateLoadingProgress(75);
             await preloadAutoTrackInstruments();
-            
+
             updateLoadingProgress(85);
             midi.tracks.forEach(track => {
                 if (track.notes.length > 0) {
@@ -1043,72 +661,72 @@
                     trackIndex++;
                 }
             });
-            
+
             updateLoadingProgress(95);
             notes.sort((a, b) => a.time - b.time);
             window.midiRange = { min: Math.max(0, minMidi - 1), max: Math.min(127, maxMidi + 1) };
-            playBtn.disabled = false;
-            statusEl.textContent = `已加载: ${file.name} (${notes.length} 个音符)`;
+            loadedFileName = file.name;
+            onStatus(`已加载: ${file.name} (${notes.length} 个音符)`);
             totalDuration = notes[notes.length - 1].time + notes[notes.length - 1].duration;
             updateProgressUI();
             drawFrame(0);
-            
+
             updateLoadingProgress(100);
-            setTimeout(() => hideLoading(), 300);
-        } catch (err) { 
-            console.error('加载失败:', err); 
-            statusEl.textContent = '加载失败: ' + err.message;
+            if (hideLoadingTimer) clearTimeout(hideLoadingTimer);
+            hideLoadingTimer = setTimeout(() => { hideLoadingTimer = 0; hideLoading(); }, 300);
+            onLoaded({ name: file.name, notes: notes.length, totalDuration });
+        } catch (err) {
+            console.error('加载失败:', err);
+            const message = err && err.message ? err.message : String(err);
+            onStatus('加载失败: ' + message);
+            onError(message);
             hideLoading();
         }
     }
 
-    fileInput.addEventListener('change', (e) => {
-        loadMidiFile(e.target.files[0]);
-    });
-
-    // ==================== 拖放加载 MIDI ====================
+    // ==================== 拖放加载 MIDI（body 级） ====================
     let dragCounter = 0;
 
-    document.body.addEventListener('dragenter', (e) => {
+    function handleDragEnter(e) {
         e.preventDefault();
         e.stopPropagation();
         dragCounter++;
         if (dragCounter === 1) {
             document.body.classList.add('drag-over');
         }
-    });
+    }
 
-    document.body.addEventListener('dragover', (e) => {
+    function handleDragOver(e) {
         e.preventDefault();
         e.stopPropagation();
-    });
+    }
 
-    document.body.addEventListener('dragleave', (e) => {
+    function handleDragLeave(e) {
         e.preventDefault();
         e.stopPropagation();
         dragCounter--;
         if (dragCounter === 0) {
             document.body.classList.remove('drag-over');
         }
-    });
+    }
 
-    document.body.addEventListener('drop', (e) => {
+    function handleDrop(e) {
         e.preventDefault();
         e.stopPropagation();
         dragCounter = 0;
         document.body.classList.remove('drag-over');
-        
+
         const files = e.dataTransfer.files;
         if (files.length > 0) {
             const file = files[0];
             const name = file.name.toLowerCase();
             if (name.endsWith('.mid') || name.endsWith('.midi')) {
-                loadMidiFile(file);
+                loadFile(file);
             } else {
-                statusEl.textContent = '不支持的文件格式，请拖入 .mid 或 .midi 文件';
+                onStatus('不支持的文件格式，请拖入 .mid 或 .midi 文件');
             }
         }
-    });
+    }
 
     function scheduleNoteToTransport(note) {
         const noteStart = toTransportTime(note.time);
@@ -1133,7 +751,7 @@
                         const track = trackInfo.length > 0 && trackInfo[note.track] ? trackInfo[note.track] : null;
                         const trackVolume = track ? track.volume : 1.0;
                         const alpha = trackVolume * note.velocity;
-                        
+
                         // 计算击打瞬间的音符渲染颜色，与 drawFrame 中的渲染逻辑保持一致
                         // 击打瞬间音符跨越判定线，使用彩色渲染
                         const trackHue = track ? track.hue : trackHues[note.track % trackHues.length];
@@ -1141,7 +759,7 @@
                         const isLight = isLightTheme();
                         const lightness = isLight ? 60 : 55;
                         const particleColor = `hsla(${hue}, 100%, ${lightness}%, ${alpha})`;
-                        
+
                         // 减少粒子数量：从10-25个改为5-12个，但受全局限制
                         const requestedCount = Math.floor(5 + note.velocity * 7);
                         let particleCount;
@@ -1162,42 +780,52 @@
         }, noteStart);
     }
 
-    // ==================== 播放控制（正确版本，基于 Tone.Transport） ====================
+    // ==================== 播放控制（基于 Tone.Transport） ====================
     async function startPlay() {
         if (notes.length === 0) return;
         await Tone.start();
         applyPlaybackRate();
         isPlaying = true;
-        document.getElementById('playIcon').innerHTML = '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>';
-        statusEl.textContent = '播放中...';
+        onPlaying({ playing: true });
+        onStatus('播放中...');
         const startOffset = currentTime;
         scheduleTransportFrom(startOffset);
         currentTime = startOffset;
-        requestAnimationFrame(renderLoop);
+        if (renderRaf) cancelAnimationFrame(renderRaf);
+        renderRaf = requestAnimationFrame(renderLoop);
     }
 
     function pausePlay() {
         isPlaying = false;
         Tone.Transport.pause();
-        document.getElementById('playIcon').innerHTML = '<polygon points="5,3 19,12 5,21"/>';
-        statusEl.textContent = '已暂停';
+        if (renderRaf) { cancelAnimationFrame(renderRaf); renderRaf = 0; }
+        onPlaying({ playing: false });
+        onStatus('已暂停');
     }
 
     function stopPlay(isEnd = false) {
         resetPlaybackState(true);
-        statusEl.textContent = isEnd ? '播放完毕' : '已停止';
+        onPlaying({ playing: false });
+        onStatus(isEnd ? '播放完毕' : '已停止');
         if (notes.length > 0) drawFrame(0);
     }
 
-    playBtn.addEventListener('click', () => { if (isPlaying) pausePlay(); else startPlay(); });
+    function togglePlay() { if (isPlaying) pausePlay(); else startPlay(); }
 
     // ==================== 渲染 ====================
     function renderLoop() {
-        if (!isPlaying) return;
+        if (!isPlaying) { renderRaf = 0; return; }
         currentTime = Math.min(totalDuration, toSongTime(Tone.Transport.seconds));
         updateProgressUI();
         drawFrame(currentTime);
-        requestAnimationFrame(renderLoop);
+        renderRaf = requestAnimationFrame(renderLoop);
+    }
+
+    function midiToX(midi) {
+        const range = window.midiRange || { min: 48, max: 84 };
+        const availableWidth = WIDTH - 2 * MARGIN;
+        const normalized = (midi - range.min) / (range.max - range.min);
+        return MARGIN + normalized * availableWidth;
     }
 
     function midiToY(midi) {
@@ -1302,13 +930,13 @@
         notes.forEach(note => {
             const timeDelta = note.time - now;
             const timeSinceEnd = now - (note.time + note.duration);
-            
+
             // 动态计算音符加载范围：根据瀑布流速度和屏幕尺寸调整
             // 水平模式：音符从右向左移动，需要加载右侧屏幕宽度外的音符
             // 垂直模式：音符从上向下移动，需要加载上方屏幕高度外的音符
             const maxVisibleTime = isHorizontal ? (WIDTH / SPEED) : (HEIGHT / SPEED);
             const loadAheadTime = maxVisibleTime + FADE_TIME + 1.0; // 提前加载时间 = 可见时间 + 淡出时间 + 缓冲
-            
+
             if (timeDelta > loadAheadTime) return; // 太远的音符不渲染
             if (trackInfo.length > 0 && !trackInfo[note.track]?.enabled) return;
 
@@ -1316,7 +944,7 @@
 
             // 计算音符的颜色和饱和度
             let hue, lightness, saturation;
-            
+
             // 判断音符是否正在被击打（跨越判定线的时刻）
             const isBeingHit = timeDelta <= 0 && timeSinceEnd < 0;
             // 判断是否为击打瞬间（刚接触判定线的前0.1秒内）- 用于控制发光
@@ -1334,16 +962,16 @@
                 const x = hitX + timeDelta * SPEED;
                 const y = midiToY(note.midi);
                 if (x > WIDTH + FADE_IN_DIST) return;
-                
+
                 // 判断音符是否已完全通过判定线
                 const isFullyPassed = timeSinceEnd >= 0;
-                
+
                 // 完全通过的音符渲染为灰色
                 if (isFullyPassed) {
                     ctx.fillStyle = `hsla(0, 0%, ${isLight ? 75 : 35}%, ${alpha * 0.7})`;
                     ctx.shadowBlur = 0;
-                    ctx.beginPath(); 
-                    ctx.roundRect(x, y - THICKNESS / 2, length, THICKNESS, 5); 
+                    ctx.beginPath();
+                    ctx.roundRect(x, y - THICKNESS / 2, length, THICKNESS, 5);
                     ctx.fill();
                 }
                 // 对于正在播放的长音符，需要分段渲染：已过部分灰色，未过部分彩色
@@ -1351,23 +979,23 @@
                     // 计算判定线在音符中的位置
                     const passedLength = (-timeDelta) * SPEED; // 已经过判定线的长度
                     const remainingLength = length - passedLength; // 剩余未过的长度
-                    
+
                     // 渲染已过的部分（灰色）
                     if (passedLength > 0) {
                         ctx.fillStyle = `hsla(0, 0%, ${isLight ? 75 : 35}%, ${alpha * 0.7})`;
                         ctx.shadowBlur = 0; // 灰色部分不发光
-                        ctx.beginPath(); 
-                        ctx.roundRect(x, y - THICKNESS / 2, Math.min(passedLength, length), THICKNESS, 5); 
+                        ctx.beginPath();
+                        ctx.roundRect(x, y - THICKNESS / 2, Math.min(passedLength, length), THICKNESS, 5);
                         ctx.fill();
                     }
-                    
+
                     // 渲染剩余的部分（彩色，在判定线右侧）
                     if (remainingLength > 0) {
                         ctx.fillStyle = `hsla(${hue}, ${saturation}, ${lightness}%, ${alpha})`;
                         // 只有开启发光效果且在击打阶段才应用shadowBlur
                         if (enableGlow && isBeingHit) { ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = GLOW_BLUR; }
-                        ctx.beginPath(); 
-                        ctx.roundRect(x + passedLength, y - THICKNESS / 2, remainingLength, THICKNESS, 5); 
+                        ctx.beginPath();
+                        ctx.roundRect(x + passedLength, y - THICKNESS / 2, remainingLength, THICKNESS, 5);
                         ctx.fill();
                     }
                 } else if (timeDelta > 0) {
@@ -1380,16 +1008,16 @@
                 const y = hitY - timeDelta * SPEED;
                 const x = midiToX(note.midi);
                 if (y < -FADE_IN_DIST) return;
-                
+
                 // 判断音符是否已完全通过判定线
                 const isFullyPassed = timeSinceEnd >= 0;
-                
+
                 // 完全通过的音符渲染为灰色
                 if (isFullyPassed) {
                     ctx.fillStyle = `hsla(0, 0%, ${isLight ? 75 : 35}%, ${alpha * 0.7})`;
                     ctx.shadowBlur = 0;
-                    ctx.beginPath(); 
-                    ctx.roundRect(x - THICKNESS / 2, y - length, THICKNESS, length, 5); 
+                    ctx.beginPath();
+                    ctx.roundRect(x - THICKNESS / 2, y - length, THICKNESS, length, 5);
                     ctx.fill();
                 }
                 // 对于正在播放的长音符，需要分段渲染：已过部分灰色，未过部分彩色
@@ -1397,23 +1025,23 @@
                     // 计算判定线在音符中的位置
                     const passedLength = (-timeDelta) * SPEED; // 已经过判定线的长度
                     const remainingLength = length - passedLength; // 剩余未过的长度
-                    
+
                     // 渲染已过的部分（灰色，在判定线下方）
                     if (passedLength > 0) {
                         ctx.fillStyle = `hsla(0, 0%, ${isLight ? 75 : 35}%, ${alpha * 0.7})`;
                         ctx.shadowBlur = 0; // 灰色部分不发光
-                        ctx.beginPath(); 
-                        ctx.roundRect(x - THICKNESS / 2, y - passedLength, THICKNESS, passedLength, 5); 
+                        ctx.beginPath();
+                        ctx.roundRect(x - THICKNESS / 2, y - passedLength, THICKNESS, passedLength, 5);
                         ctx.fill();
                     }
-                    
+
                     // 渲染剩余的部分（彩色，在判定线上方）
                     if (remainingLength > 0) {
                         ctx.fillStyle = `hsla(${hue}, ${saturation}, ${lightness}%, ${alpha})`;
                         // 只有开启发光效果且在击打阶段才应用shadowBlur
                         if (enableGlow && isBeingHit) { ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = GLOW_BLUR; }
-                        ctx.beginPath(); 
-                        ctx.roundRect(x - THICKNESS / 2, y - length, THICKNESS, remainingLength, 5); 
+                        ctx.beginPath();
+                        ctx.roundRect(x - THICKNESS / 2, y - length, THICKNESS, remainingLength, 5);
                         ctx.fill();
                     }
                 } else if (timeDelta > 0) {
@@ -1438,7 +1066,7 @@
                         // 使用与当前音符渲染完全一致的彩色
                         particleColor = `hsla(${hue}, ${saturation}, ${lightness}%, ${alpha})`;
                     }
-                    
+
                     // 长音阈值改为 0.3 秒，降低概率到 0.4，每帧产生 1~2 个粒子
                     const isLongNote = note.duration > 0.3;
                     if (isLongNote && Math.random() < 0.4) {
@@ -1465,31 +1093,144 @@
         }
     }
 
+    // ==================== 画布尺寸（跟随容器显示尺寸） ====================
+    function resizeCanvas(width, height) {
+        WIDTH = Math.max(320, Math.round(width));
+        HEIGHT = Math.max(240, Math.round(height));
+        canvas.width = WIDTH;
+        canvas.height = HEIGHT;
+        drawFrame(currentTime);
+    }
+
+    // 画布像素尺寸跟随其显示尺寸，避免 CSS 拉伸导致画面变形
+    function getCanvasDisplaySize() {
+        if (!wrapper) return getDefaultCanvasSize();
+        const rect = wrapper.getBoundingClientRect();
+        if (!rect.width || !rect.height) return getDefaultCanvasSize();
+        return { width: rect.width, height: rect.height };
+    }
+
+    function updateCanvasSizeForCurrentMode() {
+        if (document.fullscreenElement === wrapper && wrapper) {
+            const rect = wrapper.getBoundingClientRect();
+            resizeCanvas(rect.width, rect.height);
+            return;
+        }
+        const displaySize = getCanvasDisplaySize();
+        resizeCanvas(displaySize.width, displaySize.height);
+    }
+
+    // 容器尺寸变化（窗口缩放、面板显隐、全屏切换）时同步画布
+    let canvasResizeRaf = 0;
+    let canvasResizeObserver = null;
+    if (typeof ResizeObserver !== 'undefined' && wrapper) {
+        canvasResizeObserver = new ResizeObserver(() => {
+            if (canvasResizeRaf) cancelAnimationFrame(canvasResizeRaf);
+            canvasResizeRaf = requestAnimationFrame(() => {
+                canvasResizeRaf = 0;
+                updateCanvasSizeForCurrentMode();
+            });
+        });
+        canvasResizeObserver.observe(wrapper);
+    }
+
+    // ==================== 全屏 ====================
+    async function toggleFullscreen() {
+        if (!wrapper) return;
+        if (typeof window.pywebview !== 'undefined') {
+            try {
+                if (!window.pywebview.api || typeof window.pywebview.api.fs !== 'function') return;
+                const ret = await pywebview.api.fs();
+                if (ret === 'fullscreen') {
+                    document.body.classList.add('pywebview-fullscreen');
+                    setTimeout(() => window.dispatchEvent(new Event('resize')), 200);
+                } else if (ret === 'windowed') {
+                    document.body.classList.remove('pywebview-fullscreen');
+                    setTimeout(() => window.dispatchEvent(new Event('resize')), 200);
+                }
+            } catch (e) {
+                console.warn('pywebview fs error:', e);
+            }
+            return;
+        }
+        // 浏览器环境：使用 HTML5 全屏
+        try {
+            if (document.fullscreenElement === wrapper) {
+                await document.exitFullscreen();
+                wrapper.classList.remove('fullscreen');
+                document.body.classList.remove('fullscreen-active');
+            } else {
+                await wrapper.requestFullscreen();
+                wrapper.classList.add('fullscreen');
+                document.body.classList.add('fullscreen-active');
+            }
+        } catch (err) {
+            onStatus(`全屏切换失败: ${err.message}`);
+        }
+    }
+
+    function handleFullscreenChange() {
+        const isFullscreen = document.fullscreenElement === wrapper;
+        if (wrapper) {
+            wrapper.classList.toggle('fullscreen', isFullscreen);
+        }
+        // 全屏状态下隐藏鼠标 / 其它视觉反馈由 CSS 依据该 class 处理
+        document.body.classList.toggle('fullscreen-active', isFullscreen);
+        updateCanvasSizeForCurrentMode();
+        // 退出全屏后强制立即绘制白色背景，防止黑色闪烁
+        requestAnimationFrame(() => drawFrame(currentTime));
+    }
+
+    // ==================== 窗口尺寸 ====================
+    let resizeTimer = 0;
+
+    function handleWindowResize() {
+        updateCanvasSizeForCurrentMode();
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+            fetch('/api/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ windowWidth: window.innerWidth, windowHeight: window.innerHeight })
+            }).catch(() => {});
+        }, 500);
+    }
+
     // ==================== 键盘 ====================
-    document.addEventListener('keydown', (e) => {
+    function handleKeydown(e) {
         if (e.code === 'Space') { e.preventDefault(); if (notes.length > 0) { if (isPlaying) pausePlay(); else startPlay(); } }
         if (e.code === 'KeyR') { stopPlay(); }
         // ESC 退出 pywebview 全屏
         if (e.code === 'Escape' && typeof window.pywebview !== 'undefined' && document.body.classList.contains('pywebview-fullscreen')) {
-            toggleCanvasFullscreen();
+            toggleFullscreen();
         }
-    });
+    }
+
+    // ==================== 事件注册 ====================
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    window.addEventListener('resize', handleWindowResize);
+    document.addEventListener('keydown', handleKeydown);
+    document.body.addEventListener('dragenter', handleDragEnter);
+    document.body.addEventListener('dragover', handleDragOver);
+    document.body.addEventListener('dragleave', handleDragLeave);
+    document.body.addEventListener('drop', handleDrop);
 
     // ==================== 配置保存/加载 ====================
     function saveConfig() {
         const cfg = {
-            volume: parseFloat(volumeSlider?.value ?? -6),
-            speed: parseInt(speedSlider?.value ?? 256),
-            playbackRate: parseFloat(playbackRateSlider?.value ?? 1),
-            hitLinePosition: parseFloat(hitLinePositionSlider?.value ?? 0.5),
-            direction: flowDirection,
-            particles: particleToggle?.checked ?? true,
-            glow: glowToggle?.checked ?? true,
-            shake: shakeToggle?.checked ?? true,
-            shakeIntensity: parseFloat(shakeIntensitySlider?.value ?? 4),
-            particleLimit: parseInt(particleLimitSlider?.value ?? 1024),
-            info: infoToggle?.checked ?? true,
-            velocity: velocityToggle?.checked ?? true,
+            volume: settings.volume,
+            speed: settings.speed,
+            playbackRate: settings.playbackRate,
+            hitLinePosition: settings.hitLinePosition,
+            direction: settings.direction,
+            particles: settings.particles,
+            glow: settings.glow,
+            shake: settings.shake,
+            shakeIntensity: settings.shakeIntensity,
+            particleLimit: settings.particleLimit,
+            info: settings.info,
+            velocity: settings.velocity,
+            theme: settings.theme,
         };
         fetch('/api/config', {
             method: 'POST',
@@ -1502,64 +1243,360 @@
         fetch('/api/config')
             .then(r => r.json())
             .then(cfg => {
-                if (cfg.volume !== undefined && volumeSlider) {
-                    volumeSlider.value = cfg.volume;
-                    updateVolume();
+                if (cfg.theme !== undefined) settings.theme = cfg.theme;
+
+                if (cfg.volume !== undefined) {
+                    settings.volume = cfg.volume;
+                    if (masterVolume && !masterVolume.disposed) masterVolume.volume.value = cfg.volume;
                 }
-                if (cfg.speed !== undefined && speedSlider) {
-                    speedSlider.value = cfg.speed;
+                if (cfg.speed !== undefined) {
+                    settings.speed = cfg.speed;
                     SPEED = cfg.speed;
-                    speedValue.textContent = cfg.speed;
                 }
-                if (cfg.playbackRate !== undefined && playbackRateSlider) {
-                    playbackRateSlider.value = cfg.playbackRate;
+                if (cfg.playbackRate !== undefined) {
+                    settings.playbackRate = cfg.playbackRate;
                     playbackRate = cfg.playbackRate;
                     applyPlaybackRate();
                 }
-                if (cfg.hitLinePosition !== undefined && hitLinePositionSlider) {
-                    hitLinePositionSlider.value = cfg.hitLinePosition;
+                if (cfg.hitLinePosition !== undefined) {
+                    settings.hitLinePosition = cfg.hitLinePosition;
                     hitLinePosition = cfg.hitLinePosition;
-                    hitLinePositionValue.textContent = Math.round(cfg.hitLinePosition * 100) + '%';
                 }
-                if (cfg.direction) setFlowDirection(cfg.direction);
-                if (cfg.particles !== undefined && particleToggle) {
-                    particleToggle.checked = cfg.particles;
+                if (cfg.direction) setDirection(cfg.direction);
+                if (cfg.particles !== undefined) {
+                    settings.particles = cfg.particles;
                     enableParticles = cfg.particles;
                     if (!enableParticles) particles = [];
                 }
-                if (cfg.glow !== undefined && glowToggle) {
-                    glowToggle.checked = cfg.glow;
+                if (cfg.glow !== undefined) {
+                    settings.glow = cfg.glow;
                     enableGlow = cfg.glow;
                 }
-                if (cfg.shake !== undefined && shakeToggle) {
-                    shakeToggle.checked = cfg.shake;
+                if (cfg.shake !== undefined) {
+                    settings.shake = cfg.shake;
                     enableShake = cfg.shake;
                 }
-                if (cfg.shakeIntensity !== undefined && shakeIntensitySlider) {
-                    shakeIntensitySlider.value = cfg.shakeIntensity;
+                if (cfg.shakeIntensity !== undefined) {
+                    settings.shakeIntensity = cfg.shakeIntensity;
                     shakeIntensity = cfg.shakeIntensity;
-                    shakeIntensityValue.textContent = cfg.shakeIntensity;
                 }
-                if (cfg.particleLimit !== undefined && particleLimitSlider) {
-                    particleLimitSlider.value = cfg.particleLimit;
+                if (cfg.particleLimit !== undefined) {
+                    settings.particleLimit = cfg.particleLimit;
                     maxParticlesPerFrame = cfg.particleLimit;
-                    particleLimitValue.textContent = cfg.particleLimit;
                 }
-                if (cfg.info !== undefined && infoToggle) {
-                    infoToggle.checked = cfg.info;
+                if (cfg.info !== undefined) {
+                    settings.info = cfg.info;
                     targetExtraInfoAlpha = cfg.info ? 1 : 0;
                     currentExtraInfoAlpha = targetExtraInfoAlpha;
                 }
-                if (cfg.velocity !== undefined && velocityToggle) {
-                    velocityToggle.checked = cfg.velocity;
-                    showVelocity = cfg.velocity;
+                if (cfg.velocity !== undefined) {
+                    settings.velocity = cfg.velocity;
                 }
 
+                onConfigLoaded(cfg);
                 if (!isPlaying) drawFrame(currentTime);
             })
             .catch(() => {});
     }
 
+    // ==================== 设置 Setter（UI -> 引擎） ====================
+    function setVolume(db) {
+        const value = parseFloat(db);
+        if (!Number.isFinite(value)) return;
+        settings.volume = value;
+        if (masterVolume && !masterVolume.disposed) masterVolume.volume.value = value;
+        saveConfig();
+    }
+
+    function setSpeed(speed) {
+        const value = parseInt(speed, 10);
+        if (!Number.isFinite(value)) return;
+        settings.speed = value;
+        SPEED = value;
+        saveConfig();
+        if (!isPlaying) drawFrame(currentTime);
+    }
+
+    function setPlaybackRate(rate) {
+        const value = parseFloat(rate);
+        playbackRate = Number.isFinite(value) && value > 0 ? value : 1;
+        settings.playbackRate = playbackRate;
+        applyPlaybackRate();
+        saveConfig();
+    }
+
+    function setHitLinePosition(ratio) {
+        const value = parseFloat(ratio);
+        if (!Number.isFinite(value)) return;
+        settings.hitLinePosition = value;
+        hitLinePosition = value;
+        saveConfig();
+        if (!isPlaying) drawFrame(currentTime);
+    }
+
+    function setDirection(direction) {
+        if (!direction) return;
+        settings.direction = direction;
+        flowDirection = direction;
+        saveConfig();
+        if (!isPlaying && typeof currentTime !== 'undefined') {
+            drawFrame(currentTime);
+        }
+    }
+
+    function setInfoEnabled(enabled) {
+        const value = !!enabled;
+        settings.info = value;
+        targetExtraInfoAlpha = value ? 1 : 0;
+        if (!isPlaying) animateTransition();
+        saveConfig();
+    }
+
+    function setParticlesEnabled(enabled) {
+        const value = !!enabled;
+        settings.particles = value;
+        enableParticles = value;
+        if (!enableParticles) particles = [];
+        saveConfig();
+        if (!isPlaying) drawFrame(currentTime);
+    }
+
+    function setGlowEnabled(enabled) {
+        const value = !!enabled;
+        settings.glow = value;
+        enableGlow = value;
+        saveConfig();
+        if (!isPlaying) drawFrame(currentTime);
+    }
+
+    function setShakeEnabled(enabled) {
+        const value = !!enabled;
+        settings.shake = value;
+        enableShake = value;
+        saveConfig();
+        if (!isPlaying) drawFrame(currentTime);
+    }
+
+    function setShakeIntensity(intensity) {
+        const value = parseFloat(intensity);
+        if (!Number.isFinite(value)) return;
+        settings.shakeIntensity = value;
+        shakeIntensity = value;
+        saveConfig();
+        if (!isPlaying) drawFrame(currentTime);
+    }
+
+    function setParticleLimit(limit) {
+        const value = parseInt(limit, 10);
+        if (!Number.isFinite(value)) return;
+        if (value >= 2048) {
+            unlimitedParticles = true;
+            maxParticlesPerFrame = Infinity;
+        } else {
+            unlimitedParticles = false;
+            maxParticlesPerFrame = Number.isFinite(value) && value > 0 ? value : 1024;
+        }
+        settings.particleLimit = value;
+        saveConfig();
+    }
+
+    function setTrackEnabled(index, enabled) {
+        const track = trackInfo[index];
+        if (!track) return;
+        track.enabled = !!enabled;
+        if (!isPlaying) drawFrame(currentTime);
+    }
+
+    function setTrackVolume(index, volume) {
+        const track = trackInfo[index];
+        if (!track) return;
+        const value = parseFloat(volume);
+        if (!Number.isFinite(value)) return;
+        track.volume = value;
+
+        // 当音量设为0时，自动关闭该音轨的开关（与原 UI 行为一致）
+        if (value === 0 && track.enabled) {
+            track.enabled = false;
+            if (!isPlaying) drawFrame(currentTime);
+            // 通知 UI 同步复选框状态
+            emitTracks();
+        }
+    }
+
+    async function setTrackInstrument(index, instrument) {
+        const track = trackInfo[index];
+        if (!track) return;
+        track.instrument = instrument;
+        const resolvedType = getTrackResolvedInstrumentType(track);
+        if (resolvedType) {
+            onStatus(`加载音轨音色中...`);
+            await getInstrumentInstance(resolvedType);
+            onStatus(`音轨 ${trackInfo[index].name} 音色就绪`);
+        }
+    }
+
+    function seek(seconds) {
+        if (notes.length === 0 || gridLines.length === 0 || totalDuration <= 0) {
+            updateProgressUI();
+            return;
+        }
+        const rawSeekTime = Math.max(0, Math.min(totalDuration, parseFloat(seconds) || 0));
+        const measureLines = gridLines.filter(line => line.isMeasure);
+        if (measureLines.length === 0) return;
+        const snappedTime = measureLines.reduce((prev, curr) => (Math.abs(curr.time - rawSeekTime) < Math.abs(prev.time - rawSeekTime) ? curr : prev)).time;
+        currentTime = snappedTime;
+        if (isPlaying) scheduleTransportFrom(currentTime);
+        else drawFrame(currentTime);
+        updateProgressUI();
+    }
+
+    function setLoop(enabled) {
+        isLoopEnabled = !!enabled;
+        if (isPlaying && notes.length > 0) scheduleTransportFrom(currentTime);
+    }
+
+    function stop() { stopPlay(false); }
+
+    // 主题变化后重绘；可选传入 themeMode，传入时会同步到 /api/config（与原主题切换写注册表的时机一致）
+    function refreshTheme(themeMode) {
+        if (typeof themeMode === 'string' && themeMode) {
+            settings.theme = themeMode;
+            saveConfig();
+        }
+        requestAnimationFrame(() => drawFrame(currentTime));
+    }
+
+    // 音色下拉选项（value 语义与 setTrackInstrument 完全一致）
+    function getInstrumentOptions() {
+        const options = [{ value: 'midi_auto', label: '自动（MIDI）' }];
+        const sampleOptions = [
+            { value: 'piano', label: '钢琴' },
+            { value: 'violin', label: '小提琴' },
+            { value: 'viola', label: '中提琴' },
+            { value: 'cello', label: '大提琴' },
+            { value: 'piccolo', label: '短笛' },
+            { value: 'flute', label: '长笛' },
+            { value: 'acoustic_guitar', label: '吉他' },
+            { value: 'music_box', label: '八音盒' },
+            { value: 'shamisen', label: '三味线' },
+            { value: 'voice', label: '人声' }
+        ];
+        const synthOptions = [
+            { value: 'default', label: '正弦合成器' },
+            { value: 'fm', label: 'FM 电钢琴' },
+            { value: 'am', label: 'AM 复古' },
+            { value: 'fat', label: '胖锯齿波' }
+        ];
+        sampleOptions.forEach(opt => options.push({ value: opt.value, label: `采样音色 · ${opt.label}` }));
+        synthOptions.forEach(opt => options.push({ value: opt.value, label: `合成器音色 · ${opt.label}` }));
+        GM_PROGRAM_NAMES.forEach((name, idx) => options.push({ value: `gm:${idx}`, label: `GM ${idx + 1}: ${name}` }));
+        return options;
+    }
+
+    function getState() {
+        return {
+            settings: Object.assign({}, settings),
+            isPlaying,
+            isLoopEnabled,
+            currentTime,
+            totalDuration,
+            loadedFileName,
+            noteCount: notes.length,
+            gridLineCount: gridLines.length,
+            trackCount: trackInfo.length,
+            midiRange: window.midiRange ? Object.assign({}, window.midiRange) : null,
+            midiMeta: midiMeta,
+            canvas: { width: WIDTH, height: HEIGHT },
+            effects: {
+                maxParticlesPerFrame,
+                unlimitedParticles,
+                activeParticles: particles.length
+            },
+            instrumentTypes: Object.keys(instrumentPool)
+        };
+    }
+
+    // ==================== 销毁 ====================
+    function destroy() {
+        isPlaying = false;
+        try {
+            Tone.Transport.loop = false;
+            Tone.Transport.stop();
+            Tone.Transport.cancel();
+        } catch (err) { /* Tone 可能已不可用，忽略 */ }
+
+        if (renderRaf) { cancelAnimationFrame(renderRaf); renderRaf = 0; }
+        if (transitionRaf) { cancelAnimationFrame(transitionRaf); transitionRaf = 0; }
+        if (canvasResizeRaf) { cancelAnimationFrame(canvasResizeRaf); canvasResizeRaf = 0; }
+        if (hideLoadingTimer) { clearTimeout(hideLoadingTimer); hideLoadingTimer = 0; }
+        if (resizeTimer) { clearTimeout(resizeTimer); resizeTimer = 0; }
+        if (canvasResizeObserver) { canvasResizeObserver.disconnect(); canvasResizeObserver = null; }
+
+        document.removeEventListener('fullscreenchange', handleFullscreenChange);
+        document.removeEventListener('keydown', handleKeydown);
+        window.removeEventListener('resize', handleWindowResize);
+        document.body.removeEventListener('dragenter', handleDragEnter);
+        document.body.removeEventListener('dragover', handleDragOver);
+        document.body.removeEventListener('dragleave', handleDragLeave);
+        document.body.removeEventListener('drop', handleDrop);
+
+        // 由本实例添加的 body 级 class 一并清理
+        document.body.classList.remove('drag-over');
+        document.body.classList.remove('pywebview-fullscreen');
+        document.body.classList.remove('fullscreen-active');
+        if (wrapper) wrapper.classList.remove('fullscreen');
+
+        // 释放本实例创建的音频节点
+        const disposed = new Set();
+        Object.keys(instrumentPool).forEach(type => {
+            const inst = instrumentPool[type];
+            if (inst && typeof inst.dispose === 'function' && !disposed.has(inst)) {
+                disposed.add(inst);
+                try { inst.dispose(); } catch (err) { /* 忽略重复释放 */ }
+            }
+        });
+        try { reverb.dispose(); } catch (err) { /* 忽略 */ }
+        try { masterVolume.dispose(); } catch (err) { /* 忽略 */ }
+
+        notes = [];
+        gridLines = [];
+        trackInfo = [];
+        particles = [];
+        midiMeta = null;
+    }
+
+    // ==================== 对外 API ====================
+    const api = {
+        loadFile,
+        setVolume,
+        setSpeed,
+        setPlaybackRate,
+        setHitLinePosition,
+        setDirection,
+        setInfoEnabled,
+        setParticlesEnabled,
+        setGlowEnabled,
+        setShakeEnabled,
+        setShakeIntensity,
+        setParticleLimit,
+        setTrackEnabled,
+        setTrackVolume,
+        setTrackInstrument,
+        togglePlay,
+        stop,
+        seek,
+        setLoop,
+        toggleFullscreen,
+        refreshTheme,
+        getInstrumentOptions,
+        getState,
+        destroy
+    };
+
     // ==================== 初始 ====================
+    updateCanvasSizeForCurrentMode();
     loadAndApplyConfig();
     drawFrame(0);
+
+    return api;
+}

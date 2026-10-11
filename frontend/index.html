@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="theme-light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light dark">
+    <title>MIDI 可视化播放器</title>
+    <script>
+        // 在样式表加载前确定主题，避免深色模式下的白色闪屏
+        (function () {
+            var mode = 'system';
+            try { mode = localStorage.getItem('midiPlayer.theme') || 'system'; } catch (e) { }
+            if (mode !== 'light' && mode !== 'dark' && mode !== 'system') mode = 'system';
+            var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            var dark = mode === 'dark' || (mode === 'system' && prefersDark);
+            var root = document.documentElement;
+            root.classList.remove('theme-light', 'theme-dark');
+            root.classList.add(dark ? 'theme-dark' : 'theme-light');
+            root.setAttribute('data-theme-mode', mode);
+        })();
+    </script>
+    <script src="/Tone.js"></script>
+    <script src="/midi"></script>
+</head>
+<body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

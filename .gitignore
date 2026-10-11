@@ -4,6 +4,9 @@ __pycache__/
 *.pyo
 .venv/
 venv/
+# 前端依赖（构建产物 assets/ 需要提交，便于直接运行）
+frontend/node_modules/
+frontend/dist/
 # PyInstaller 构建产物
 dist/
 # batch 文件

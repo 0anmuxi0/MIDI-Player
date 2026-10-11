@@ -15,7 +15,7 @@ log.setLevel(logging.ERROR)
 
 REGISTRY_PATH = r"Software\MIDIPlayer"
 
-def _load_config_from_registry():
+def load_config_from_registry():
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, REGISTRY_PATH, 0, winreg.KEY_READ) as key:
             value, _ = winreg.QueryValueEx(key, "config")
@@ -23,7 +23,7 @@ def _load_config_from_registry():
     except (FileNotFoundError, OSError, json.JSONDecodeError):
         return {}
 
-def _save_config_to_registry(cfg):
+def save_config_to_registry(cfg):
     try:
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, REGISTRY_PATH) as key:
             winreg.SetValueEx(key, "config", 0, winreg.REG_SZ, json.dumps(cfg))
@@ -40,9 +40,9 @@ def static_files(filename):
 def handle_config():
     if request.method == "POST":
         cfg = request.get_json(force=True)
-        _save_config_to_registry(cfg)
+        save_config_to_registry(cfg)
         return jsonify({"status": "ok"})
-    cfg = _load_config_from_registry()
+    cfg = load_config_from_registry()
     return jsonify(cfg)
 @app.route("/api/soundfonts/<path:subpath>")
 def serve_soundfont(subpath):
@@ -68,6 +68,27 @@ def start_flask():
     app.run(host="127.0.0.1", port=8000, debug=False)
 def load_window_size():
     return 1360, 745
+
+# 与前端 theme.css 的 --app-bg 保持一致
+THEME_BACKGROUNDS = {"light": "#f3f3f3", "dark": "#202020"}
+
+def resolve_background_color():
+    """按配置（light / dark / system）决定窗口底色，避免启动时闪白。"""
+    theme = load_config_from_registry().get("theme", "system")
+    if theme in THEME_BACKGROUNDS:
+        return THEME_BACKGROUNDS[theme]
+    try:
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+            0,
+            winreg.KEY_READ,
+        ) as key:
+            apps_use_light_theme, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+        return THEME_BACKGROUNDS["light"] if apps_use_light_theme else THEME_BACKGROUNDS["dark"]
+    except (FileNotFoundError, OSError):
+        return THEME_BACKGROUNDS["light"]
+
 if __name__ == "__main__":
     elevate()
     width, height = load_window_size()
@@ -82,7 +103,7 @@ if __name__ == "__main__":
         resizable=True,
         min_size=(1,1),
         confirm_close=False,
-        background_color='#ffffff'
+        background_color=resolve_background_color()
     )
     api.set_window(window)
     webview.start()

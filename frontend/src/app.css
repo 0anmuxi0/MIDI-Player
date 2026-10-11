@@ -1,0 +1,460 @@
+/* ============================================================================
+   MIDI 播放器布局层
+   控件外观全部来自 WinUIonWeb 组件自身的样式与 theme.css 设计令牌，
+   此文件只负责页面骨架、卡片容器与画布区域。
+   ============================================================================ */
+
+/* theme.css 将 html/body/#app 设为不可滚动，这里恢复页面滚动 */
+html,
+body,
+#app {
+    height: auto;
+    min-height: 100%;
+    overflow: visible;
+    overflow-x: hidden;
+}
+
+body {
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+/* 标题栏等装饰元素仍保持不可选中 */
+.app-titlebar,
+.app-titlebar *,
+.win-card-header {
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.app-shell {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+/* ==================== 应用内标题栏 ==================== */
+.app-titlebar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 40px;
+    padding: 0 10px 0 14px;
+    background: var(--app-bg);
+    transition: background var(--normal-duration) var(--fast-out-slow-in);
+}
+
+.app-titlebar-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    color: var(--accent-base);
+}
+
+.app-titlebar-icon svg {
+    width: 16px;
+    height: 16px;
+}
+
+.app-titlebar-title {
+    color: var(--text-primary);
+}
+
+.app-titlebar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+}
+
+/* ==================== 内容区 ==================== */
+.app-content {
+    flex: 1 1 auto;
+    width: 100%;
+    /* 放宽上限，让宽屏窗口能容纳更多设置列 */
+    max-width: 2200px;
+    margin: 0 auto;
+    padding: 8px 16px 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.win-card {
+    position: relative;
+    width: 100%;
+    background: var(--card-bg);
+    border: 1px solid var(--card-stroke);
+    border-radius: 8px;
+    transition: background-color var(--normal-duration) var(--fast-out-slow-in),
+                border-color var(--normal-duration) var(--fast-out-slow-in);
+}
+
+.win-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px 16px 0;
+}
+
+/* ==================== 画布 ==================== */
+.canvas-card {
+    padding: 0;
+    overflow: hidden;
+}
+
+.canvas-wrapper {
+    position: relative;
+    width: 100%;
+    /* 首屏内为控制栏留出空间 */
+    height: clamp(260px, 52vh, 640px);
+    background: var(--canvas-bg, var(--app-bg));
+    border-radius: 8px;
+}
+
+.canvas-wrapper canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: var(--canvas-bg, var(--app-bg));
+    border-radius: 8px;
+    box-shadow: var(--canvas-shadow);
+    cursor: pointer;
+}
+
+.canvas-fs-btn {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 3;
+}
+
+/* ==================== 播放控制条 ==================== */
+.playback-card {
+    padding: 12px 16px;
+}
+
+.playback-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.playback-row .progress-slider {
+    flex: 1 1 240px;
+    min-width: 160px;
+}
+
+.time-label {
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
+    min-width: 44px;
+    text-align: center;
+    font-size: 13px;
+}
+
+/* ==================== WinUI 图标字形 ==================== */
+/* 组件里的箭头等图标使用 Segoe 图标字体的私有区字符 */
+.icon,
+.win-expander-arrow,
+.win-settings-card-action-icon {
+    font-family: 'Segoe Fluent Icons', 'Segoe MDL2 Assets', 'Segoe UI Symbol', sans-serif;
+}
+
+/* ==================== 可折叠设置区 ==================== */
+.app-content .settings-expander {
+    margin-bottom: 0;
+}
+
+.app-content .settings-expander .win-expander-header {
+    min-height: 38px;
+    padding: 0 12px;
+}
+
+.app-content .settings-expander .win-expander-header-text {
+    font-size: 13px;
+    line-height: 18px;
+}
+
+.app-content .settings-expander .win-expander-description {
+    font-size: 11px;
+    line-height: 15px;
+}
+
+.app-content .settings-expander .win-expander-content {
+    padding: 2px 6px 6px;
+}
+
+/* 紧凑的设置行：按窗口宽度自动增减列数
+   （约 1360 窗口 3 列，1900+ 窗口 4 列，<720 单列） */
+.app-content .settings-body-compact {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    align-items: stretch;
+    column-gap: 8px;
+    padding: 4px 6px 6px;
+}
+
+.app-content .settings-body-compact .win-settings-card {
+    min-height: 50px;
+    border-radius: 8px;
+}
+
+/* 卡片的填充层需要跟随同样的圆角 */
+.app-content .settings-body-compact .win-settings-card-surface {
+    padding: 8px 12px;
+    gap: 10px;
+    border-radius: 8px;
+}
+
+.app-content .settings-body-compact .win-settings-card-title {
+    font-size: 13px;
+    line-height: 18px;
+}
+
+.app-content .settings-body-compact .win-settings-card-desc {
+    font-size: 11px;
+    line-height: 14px;
+}
+
+/* 列宽变窄时允许控件区收缩，避免溢出 */
+.app-content .settings-body-compact .win-settings-card-content {
+    flex: 0 0 auto;
+    width: 200px;
+    justify-content: flex-end;
+    min-width: 0;
+}
+
+.setting-slider {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: none;
+    width: 100%;
+}
+
+/* WinSlider 未传 Width 时：轨道内联 width:200px，且根元素为 inline-flex、轨道 flex-shrink:0，
+   三者叠加会让滑块无法撑满容器。这里统一让根元素与轨道填满可用宽度。 */
+.app-content .progress-slider .win-slider-root,
+.app-content .setting-slider .win-slider-root,
+.app-content .track-volume-slider .win-slider-root {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+}
+
+.app-content .progress-slider .win-slider,
+.app-content .setting-slider .win-slider,
+.app-content .track-volume-slider .win-slider {
+    width: 100% !important;
+    min-width: 0;
+    flex-shrink: 1;
+}
+
+.app-content .settings-body-compact .win-slider {
+    min-height: 28px;
+}
+
+/* ==================== 音轨面板 ==================== */
+.track-panel {
+    padding: 0 0 12px;
+}
+
+.track-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 12px 0;
+}
+
+.track-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin: 12px 16px 0;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--stroke-divider);
+}
+
+.track-row-extras {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.track-volume-slider {
+    width: 120px;
+}
+
+.track-instrument-combo {
+    min-width: 260px;
+}
+
+.track-empty {
+    text-align: center;
+    padding: 16px;
+    color: var(--text-tertiary);
+    font-size: 13px;
+}
+
+/* ==================== 状态栏 ==================== */
+.status-line {
+    text-align: center;
+    color: var(--text-secondary);
+}
+
+.hint-line {
+    text-align: center;
+    color: var(--text-tertiary);
+    font-size: 12px;
+}
+
+/* ==================== 加载遮罩 ==================== */
+.loading-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--app-bg) 70%, transparent);
+    backdrop-filter: var(--flyout-backdrop);
+    -webkit-backdrop-filter: var(--flyout-backdrop);
+}
+
+.loading-panel {
+    min-width: 300px;
+    padding: 24px;
+    border-radius: 8px;
+    background: var(--flyout-bg);
+    border: 1px solid var(--flyout-border);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.loading-panel .progress-wrap {
+    width: 100%;
+}
+
+.loading-percentage {
+    font-size: 20px;
+    line-height: 28px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+}
+
+/* ==================== 拖放反馈 ==================== */
+body.drag-over::after {
+    content: "释放以加载 MIDI 文件";
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    line-height: 28px;
+    font-weight: 600;
+    color: var(--accent-base);
+    background: color-mix(in srgb, var(--app-bg) 72%, transparent);
+    backdrop-filter: var(--flyout-backdrop);
+    -webkit-backdrop-filter: var(--flyout-backdrop);
+    pointer-events: none;
+}
+
+/* ==================== 全屏 ==================== */
+body.pywebview-fullscreen,
+body.fullscreen-active {
+    overflow: hidden;
+    background: var(--canvas-bg, var(--app-bg));
+    cursor: none;
+}
+
+body.pywebview-fullscreen *,
+body.fullscreen-active * {
+    cursor: none !important;
+}
+
+body.pywebview-fullscreen .app-titlebar,
+body.pywebview-fullscreen .playback-card,
+body.pywebview-fullscreen .settings-card,
+body.pywebview-fullscreen .track-panel,
+body.pywebview-fullscreen .status-line,
+body.pywebview-fullscreen .hint-line,
+body.fullscreen-active .app-titlebar,
+body.fullscreen-active .playback-card,
+body.fullscreen-active .settings-card,
+body.fullscreen-active .track-panel,
+body.fullscreen-active .status-line,
+body.fullscreen-active .hint-line {
+    display: none !important;
+}
+
+body.pywebview-fullscreen .app-content,
+body.fullscreen-active .app-content {
+    max-width: none;
+    padding: 0;
+    gap: 0;
+}
+
+body.pywebview-fullscreen .canvas-card,
+body.fullscreen-active .canvas-card {
+    position: fixed;
+    inset: 0;
+    border: 0;
+    border-radius: 0;
+    background: var(--canvas-bg, var(--app-bg));
+}
+
+body.pywebview-fullscreen .canvas-wrapper,
+body.pywebview-fullscreen .canvas-wrapper canvas,
+body.fullscreen-active .canvas-wrapper,
+body.fullscreen-active .canvas-wrapper canvas {
+    width: 100vw;
+    height: 100vh;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+/* ==================== 响应式 ==================== */
+@media (max-width: 720px) {
+    .app-content .settings-body-compact {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 640px) {
+    .app-content {
+        padding: 8px 8px 24px;
+        gap: 12px;
+    }
+
+    .canvas-wrapper {
+        height: clamp(280px, 58vh, 520px);
+    }
+
+    .track-row-extras {
+        justify-content: flex-start;
+    }
+
+    .track-volume-slider {
+        width: 100%;
+    }
+
+    .track-instrument-combo {
+        min-width: 0;
+        width: 100%;
+    }
+}
