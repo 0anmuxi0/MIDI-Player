@@ -19,9 +19,7 @@ body {
     -webkit-user-select: text;
 }
 
-/* 标题栏等装饰元素仍保持不可选中 */
-.app-titlebar,
-.app-titlebar *,
+/* 卡片标题等装饰元素保持不可选中 */
 .win-card-header {
     user-select: none;
     -webkit-user-select: none;
@@ -33,51 +31,15 @@ body {
     min-height: 100vh;
 }
 
-/* ==================== 应用内标题栏 ==================== */
-.app-titlebar {
-    flex: 0 0 auto;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    height: 40px;
-    padding: 0 10px 0 14px;
-    background: var(--app-bg);
-    transition: background var(--normal-duration) var(--fast-out-slow-in);
-}
-
-.app-titlebar-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 16px;
-    height: 16px;
-    color: var(--accent-base);
-}
-
-.app-titlebar-icon svg {
-    width: 16px;
-    height: 16px;
-}
-
-.app-titlebar-title {
-    color: var(--text-primary);
-}
-
-.app-titlebar-actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-left: auto;
-}
-
 /* ==================== 内容区 ==================== */
+/* 标题栏由系统窗口提供，页面内不再有应用标题栏 */
 .app-content {
     flex: 1 1 auto;
     width: 100%;
     /* 放宽上限，让宽屏窗口能容纳更多设置列 */
     max-width: 2200px;
     margin: 0 auto;
-    padding: 8px 16px 32px;
+    padding: 16px 16px 32px;
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -370,10 +332,8 @@ body.fullscreen-active * {
 
 /* 全屏时只保留画布：标题栏与内容区中除画布卡片外的一切都隐藏，
    这样以后新增区块也不会漏掉 */
-body.pywebview-fullscreen .app-titlebar,
 body.pywebview-fullscreen .app-content > *:not(.canvas-card),
 body.pywebview-fullscreen .canvas-fs-btn,
-body.fullscreen-active .app-titlebar,
 body.fullscreen-active .app-content > *:not(.canvas-card),
 body.fullscreen-active .canvas-fs-btn {
     display: none !important;
