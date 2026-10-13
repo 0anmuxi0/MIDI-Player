@@ -1,4 +1,4 @@
-/* ============================================================================
+﻿/* ============================================================================
    MIDI 播放器布局层
    控件外观全部来自 WinUIonWeb 组件自身的样式与 theme.css 设计令牌，
    此文件只负责页面骨架、卡片容器与画布区域。
@@ -427,4 +427,99 @@ body.fullscreen-active .canvas-wrapper canvas {
         min-width: 0;
         width: 100%;
     }
+}
+
+/* ==================== 控件圆角统一 ==================== */
+/* 卡片与开关是 8px，按钮 / 分段选择项原本 4px，统一为 8px */
+.app-content .win-btn,
+.app-content .win-button,
+.app-content .win-selector-bar-item,
+.app-content .canvas-fs-btn {
+    border-radius: 8px !important;
+}
+
+/* ==================== 卡片缓动入场 ==================== */
+@keyframes cardEnter {
+    from {
+        opacity: 0;
+        transform: translateY(14px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.app-content > * {
+    animation: cardEnter 360ms cubic-bezier(0.16, 0.84, 0.28, 1) both;
+}
+
+.app-content > *:nth-child(1) {
+    animation-delay: 20ms;
+}
+
+.app-content > *:nth-child(2) {
+    animation-delay: 60ms;
+}
+
+.app-content > *:nth-child(3) {
+    animation-delay: 100ms;
+}
+
+.app-content > *:nth-child(4) {
+    animation-delay: 140ms;
+}
+
+.app-content > *:nth-child(5) {
+    animation-delay: 180ms;
+}
+
+.app-content > *:nth-child(6) {
+    animation-delay: 220ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .app-content > * {
+        animation: none;
+    }
+}
+
+/* ==================== 画布高度拖拽 ==================== */
+.canvas-card {
+    position: relative;
+}
+
+.canvas-resize-handle {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -5px;
+    height: 10px;
+    cursor: ns-resize;
+    z-index: 6;
+    touch-action: none;
+}
+
+.canvas-resize-handle::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 46px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--text-secondary);
+    opacity: 0;
+    transition: opacity 140ms ease;
+}
+
+.canvas-card:hover .canvas-resize-handle::after {
+    opacity: 0.5;
+}
+
+.canvas-resize-handle.is-dragging::after {
+    opacity: 0.9;
+    background: var(--accent-base);
 }

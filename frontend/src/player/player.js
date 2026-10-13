@@ -1239,6 +1239,7 @@ export function createMidiPlayer({ canvas, wrapper, hooks = {} } = {}) {
             velocity: settings.velocity,
             theme: settings.theme,
         };
+        if (settings.canvasHeight != null) cfg.canvasHeight = settings.canvasHeight;
         fetch('/api/config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1251,6 +1252,7 @@ export function createMidiPlayer({ canvas, wrapper, hooks = {} } = {}) {
             .then(r => r.json())
             .then(cfg => {
                 if (cfg.theme !== undefined) settings.theme = cfg.theme;
+                if (cfg.canvasHeight !== undefined) settings.canvasHeight = cfg.canvasHeight;
 
                 if (cfg.volume !== undefined) {
                     settings.volume = cfg.volume;
@@ -1391,6 +1393,14 @@ export function createMidiPlayer({ canvas, wrapper, hooks = {} } = {}) {
         shakeIntensity = value;
         saveConfig();
         if (!isPlaying) drawFrame(currentTime);
+    }
+
+    // 画布显示高度（由界面拖拽调整后持久化）
+    function setCanvasHeight(height) {
+        const value = Math.round(parseFloat(height));
+        if (!Number.isFinite(value) || value <= 0) return;
+        settings.canvasHeight = value;
+        saveConfig();
     }
 
     function setParticleLimit(limit) {
@@ -1586,6 +1596,7 @@ export function createMidiPlayer({ canvas, wrapper, hooks = {} } = {}) {
         setShakeEnabled,
         setShakeIntensity,
         setParticleLimit,
+        setCanvasHeight,
         setTrackEnabled,
         setTrackVolume,
         setTrackInstrument,

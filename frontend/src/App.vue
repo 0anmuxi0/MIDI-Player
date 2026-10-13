@@ -2,7 +2,10 @@
   <div class="app-shell">
     <main class="app-content">
       <!-- 可视化画布 -->
-      <section class="win-card canvas-card">
+      <section
+        ref="canvasCardEl"
+        class="win-card canvas-card"
+        :style="canvasHeight ? { height: canvasHeight + 'px' } : undefined">
         <div ref="wrapperEl" class="canvas-wrapper">
           <canvas ref="canvasEl"></canvas>
 
@@ -23,6 +26,11 @@
             </div>
           </div>
         </div>
+        <div
+          class="canvas-resize-handle"
+          :class="{ 'is-dragging': resizing }"
+          title="上下拖动调整显示高度"
+          @pointerdown="onResizeStart"></div>
       </section>
 
       <!-- 播放控制 -->
@@ -318,7 +326,14 @@ function onSystemThemeChange() {
 /* ---------------- 状态 ---------------- */
 const canvasEl = ref<HTMLCanvasElement | null>(null)
 const wrapperEl = ref<HTMLElement | null>(null)
+const canvasCardEl = ref<HTMLElement | null>(null)
 const fileInputEl = ref<HTMLInputElement | null>(null)
+
+/* 画布高度：null 表示交给 CSS 默认（52vh）；拖拽后写入注册表持久化 */
+const canvasHeight = ref<number | null>(null)
+const resizing = ref(false)
+const MIN_CANVAS_HEIGHT = 220
+const RESERVED_BELOW_CANVAS = 280
 
 const playing = ref(false)
 const status = ref('请上传 MIDI 文件')
@@ -426,6 +441,38 @@ function applyConfig(config: Record<string, any>) {
   if (typeof config.shakeIntensity === 'number') { shakeIntensity.value = config.shakeIntensity; player?.setShakeIntensity(config.shakeIntensity) }
   if (typeof config.particleLimit === 'number') { particleLimit.value = config.particleLimit; player?.setParticleLimit(config.particleLimit) }
   if (typeof config.info === 'boolean') { infoEnabled.value = config.info; player?.setInfoEnabled(config.info) }
+  if (typeof config.canvasHeight === 'number' && config.canvasHeight >= MIN_CANVAS_HEIGHT) {
+    canvasHeight.value = Math.round(config.canvasHeight)
+  }
+}
+
+/* ---------------- 画布高度拖拽 ---------------- */
+function onResizeStart(event: PointerEvent) {
+  const card = canvasCardEl.value
+  if (!card) return
+  event.preventDefault()
+
+  const startY = event.clientY
+  const startHeight = card.offsetHeight
+  resizing.value = true
+  document.body.style.cursor = 'ns-resize'
+
+  const onMove = (moveEvent: PointerEvent) => {
+    const maxHeight = Math.max(MIN_CANVAS_HEIGHT, window.innerHeight - RESERVED_BELOW_CANVAS)
+    const next = startHeight + (moveEvent.clientY - startY)
+    canvasHeight.value = Math.round(Math.min(Math.max(next, MIN_CANVAS_HEIGHT), maxHeight))
+  }
+
+  const onUp = () => {
+    resizing.value = false
+    document.body.style.cursor = ''
+    window.removeEventListener('pointermove', onMove)
+    window.removeEventListener('pointerup', onUp)
+    if (canvasHeight.value != null) player?.setCanvasHeight(canvasHeight.value)
+  }
+
+  window.addEventListener('pointermove', onMove)
+  window.addEventListener('pointerup', onUp)
 }
 
 /* ---------------- 交互 ---------------- */
@@ -517,7 +564,20 @@ onMounted(() => {
   systemDarkRemoval = () => systemThemeQuery?.removeEventListener('change', onSystemThemeChange)
 
   onStateReady()
+
+  // 界面已渲染：淡出启动画面（等两帧，确保卡片入场动画已经铺开）
+  requestAnimationFrame(() => requestAnimationFrame(dismissSplash))
 })
+
+/* ---------------- 启动画面淡出 ---------------- */
+function dismissSplash() {
+  const splash = document.getElementById('splash')
+  if (!splash) return
+  splash.classList.add('is-hidden')
+  const remove = () => splash.remove()
+  splash.addEventListener('transitionend', remove, { once: true })
+  window.setTimeout(remove, 700)
+}
 
 onBeforeUnmount(() => {
   systemDarkRemoval?.()
