@@ -4290,6 +4290,9 @@ body.fullscreen-active .canvas-card {
     border: 0;
     border-radius: 0;
     background: var(--canvas-bg, var(--app-bg));
+    /* 覆盖拖拽调整画布高度时写入的内联 height，否则全屏铺不满 */
+    height: auto !important;
+    max-height: none !important;
 }
 
 body.pywebview-fullscreen .canvas-wrapper,
@@ -4298,6 +4301,7 @@ body.fullscreen-active .canvas-wrapper,
 body.fullscreen-active .canvas-wrapper canvas {
     width: 100vw;
     height: 100vh;
+    min-height: 100vh;
     border-radius: 0;
     box-shadow: none;
 }
