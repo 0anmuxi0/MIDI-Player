@@ -59,17 +59,29 @@ pnpm build          # 产物输出到 ../assets（Flask 静态目录）
 ### 打包为 exe
 
 ```bash
-pip install pyinstaller flask pywebview elevate
+pip install pyinstaller flask pywebview
+
+# 1) 先把音色库打成单个归档（只需执行一次，改了音色再重跑）
+python tools/pack_soundfonts.py
+
+# 2) 打包（音色以 soundfonts.zip 随 exe 携带）
 python -m PyInstaller --noconfirm --onefile --windowed --icon icon.ico ^
   --hidden-import flask --hidden-import webview ^
   --collect-all webview ^
   --add-data "assets;assets" ^
-  --add-data "soundfonts;soundfonts" ^
+  --add-data "soundfonts.zip;." ^
   --distpath "dist" ^
   "MIDI Player.py"
 ```
 
 生成的可执行文件在 `dist/MIDI Player.exe`（约 88 MB）。
+
+> **为什么要先打成 zip**：PyInstaller 单文件模式每次启动都会把打包内容解开到 `%TEMP%`。
+> 若直接打包 `soundfonts/`（4504 个小文件、91 MB），启动要花约 10 秒；
+> 换成单个 `soundfonts.zip` 后启动只需解压这一个文件，**启动时间从约 11 秒降到约 3 秒**，
+> 具体音色在浏览器请求时由 `serve_soundfont` 按需从 zip 中取出，仍然是单文件分发。
+>
+> 开发模式（直接 `python "MIDI Player.py"`）无需 zip，会直接读取 `soundfonts/` 目录。
 
 ### 已打包版本
 前往[Releases](https://github.com/0anmuxi0/MIDI-Player/releases)页面下载构建好的版本
@@ -93,5 +105,7 @@ frontend/                前端源码
   src/App.vue            界面（WinUIonWeb 组件组合）
   src/player/player.js   引擎：Tone.js 音频调度 + Canvas 渲染 + MIDI 解析
   src/winui/             从 WinUIonWeb 原样复制的组件与 theme.css
-soundfonts/              音色库
+soundfonts/              音色库（开发模式直接读取）
+soundfonts.zip           打包用音色归档（由 tools/pack_soundfonts.py 生成，不提交仓库）
+tools/pack_soundfonts.py 生成打包用音色归档
 ```

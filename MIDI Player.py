@@ -1,12 +1,13 @@
+import io
 import json
 import os
 import threading
 import time
 import winreg
+import zipfile
 from pathlib import Path
-from elevate import elevate
 import webview
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_file, send_from_directory
 
 # ==================== 启动耗时日志（排查启动慢） ====================
 _BOOT_TS = time.time()
@@ -28,6 +29,9 @@ def boot_log(message):
 BASE_DIR = Path(__file__).parent.resolve()
 SRC_DIR = BASE_DIR / "assets"
 SOUNDFONTS_DIR = BASE_DIR / "soundfonts"
+# 打包后音色以单个 zip 随 exe 携带：启动只需解压这 1 个文件，
+# 具体音色在浏览器请求时按需从 zip 中取出（无需整包解开）
+SOUNDFONTS_ZIP = BASE_DIR / "soundfonts.zip"
 app = Flask(__name__, static_folder=str(SRC_DIR), static_url_path="")
 import logging
 log = logging.getLogger('werkzeug')
@@ -73,7 +77,19 @@ def handle_config():
     return jsonify(cfg)
 @app.route("/api/soundfonts/<path:subpath>")
 def serve_soundfont(subpath):
-    return send_from_directory(str(SOUNDFONTS_DIR), subpath)
+    """音色按需读取：开发模式读目录；打包模式从 zip 中只取用到的那个文件。"""
+    if SOUNDFONTS_DIR.is_dir():
+        return send_from_directory(str(SOUNDFONTS_DIR), subpath)
+    if SOUNDFONTS_ZIP.is_file():
+        name = subpath.replace("\\", "/")
+        try:
+            with zipfile.ZipFile(SOUNDFONTS_ZIP) as zf:
+                data = zf.read(name)
+        except (KeyError, zipfile.BadZipFile, OSError):
+            return ("Not Found", 404)
+        mime = "audio/mpeg" if name.lower().endswith(".mp3") else "application/octet-stream"
+        return send_file(io.BytesIO(data), mimetype=mime, conditional=True)
+    return ("Not Found", 404)
 class WebViewApi:
     def __init__(self):
         self._window = None
@@ -130,9 +146,7 @@ def resolve_background_color():
         return THEME_BACKGROUNDS["light"]
 
 if __name__ == "__main__":
-    boot_log("准备提权")
-    elevate()
-    boot_log("提权完成")
+    boot_log("开始启动（无提权）")
     width, height = load_window_size()
     t = threading.Thread(target=start_flask, daemon=True)
     t.start()
