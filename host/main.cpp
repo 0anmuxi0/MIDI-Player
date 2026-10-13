@@ -349,6 +349,14 @@ static const wchar_t* kShimScript = LR"JS(
       }
     });
   } catch (e) { }
+
+  // F11 切换全屏：WebView2 有焦点时键盘消息不会传给宿主，因此在这里监听后通知宿主
+  window.addEventListener('keydown', function (event) {
+    if (event.key === 'F11') {
+      event.preventDefault();
+      try { window.chrome.webview.postMessage(JSON.stringify({ type: 'fullscreen' })); } catch (e) { }
+    }
+  }, true);
 })();
 )JS";
 
@@ -406,8 +414,9 @@ public:
     HRESULT STDMETHODCALLTYPE Invoke(ICoreWebView2* /*sender*/,
                                      ICoreWebView2NavigationCompletedEventArgs* /*args*/) override {
         if (g_splashVisible) {
-            HostLog("导航完成，收起启动画面");
+            HostLog("导航完成，显示主界面");
             g_splashVisible = false;
+            if (g_controller) g_controller->put_IsVisible(TRUE);
             KillTimer(g_hwnd, 1);
             InvalidateRect(g_hwnd, nullptr, TRUE);
         }
@@ -431,7 +440,8 @@ public:
         RECT rc;
         GetClientRect(g_hwnd, &rc);
         g_controller->put_Bounds(rc);
-        g_controller->put_IsVisible(TRUE);
+        // 先隐藏 WebView2：否则它一创建就盖住 GDI 启动画面，造成"图标→空→界面"的闪动
+        g_controller->put_IsVisible(FALSE);
 
         if (FAILED(g_controller->get_CoreWebView2(&g_webview)) || !g_webview) {
             HostLog("Controller: 无法获取 CoreWebView2");
@@ -520,10 +530,11 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             return 0;
         }
         case WM_TIMER:
-            // 兜底：导航回调迟迟不来时也收起启动画面
+            // 兜底：导航回调迟迟不来时也显示主界面
             if (wParam == 1 && g_splashVisible) {
-                HostLog("启动画面超时收起");
+                HostLog("启动画面超时，强制显示主界面");
                 g_splashVisible = false;
+                if (g_controller) g_controller->put_IsVisible(TRUE);
                 KillTimer(hwnd, 1);
                 InvalidateRect(hwnd, nullptr, TRUE);
             }
