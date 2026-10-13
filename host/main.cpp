@@ -402,6 +402,9 @@ class WebMessageHandler : public Callback<ICoreWebView2WebMessageReceivedEventHa
         if (SUCCEEDED(args->get_WebMessageAsJson(&raw)) && raw) {
             std::string message = WideToUtf8(raw);
             CoTaskMemFree(raw);
+            if (message.find("ui-ready") != std::string::npos) {
+                HostLog("页面已开始播放入场动画");
+            }
             if (message.find("fullscreen") != std::string::npos) {
                 ToggleFullscreen();
             }
@@ -419,6 +422,14 @@ public:
             HostLog("导航完成，显示主界面");
             g_splashVisible = false;
             if (g_controller) g_controller->put_IsVisible(TRUE);
+            // 界面可见之后才触发卡片入场动画（否则动画会在隐藏状态下播完）
+            if (g_webview) {
+                g_webview->ExecuteScript(
+                    L"(function(){document.body.classList.add('ui-ready');"
+                    L"try{window.chrome.webview.postMessage(JSON.stringify({type:'ui-ready'}));}catch(e){}})();",
+                    nullptr);
+                HostLog("已请求页面播放入场动画");
+            }
             KillTimer(g_hwnd, 1);
             InvalidateRect(g_hwnd, nullptr, TRUE);
         }
@@ -537,6 +548,12 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 HostLog("启动画面超时，强制显示主界面");
                 g_splashVisible = false;
                 if (g_controller) g_controller->put_IsVisible(TRUE);
+                if (g_webview) {
+                    g_webview->ExecuteScript(
+                        L"(function(){document.body.classList.add('ui-ready');"
+                        L"try{window.chrome.webview.postMessage(JSON.stringify({type:'ui-ready'}));}catch(e){}})();",
+                        nullptr);
+                }
                 KillTimer(hwnd, 1);
                 InvalidateRect(hwnd, nullptr, TRUE);
             }

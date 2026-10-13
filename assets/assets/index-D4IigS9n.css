@@ -4359,36 +4359,38 @@ body.fullscreen-active .canvas-wrapper canvas {
     }
 }
 
-.app-content > * {
-    animation: cardEnter 360ms cubic-bezier(0.16, 0.84, 0.28, 1) both;
+/* 动画要等界面真正可见后再播：宿主显示 WebView2 时会给 body 加 .ui-ready，
+   浏览器环境下由页面自己加（见 App.vue），否则动画会在不可见时提前播完 */
+body.ui-ready .app-content > * {
+    animation: cardEnter 620ms cubic-bezier(0.16, 0.84, 0.28, 1) both;
 }
 
-.app-content > *:nth-child(1) {
-    animation-delay: 20ms;
+body.ui-ready .app-content > *:nth-child(1) {
+    animation-delay: 40ms;
 }
 
-.app-content > *:nth-child(2) {
-    animation-delay: 60ms;
+body.ui-ready .app-content > *:nth-child(2) {
+    animation-delay: 110ms;
 }
 
-.app-content > *:nth-child(3) {
-    animation-delay: 100ms;
-}
-
-.app-content > *:nth-child(4) {
-    animation-delay: 140ms;
-}
-
-.app-content > *:nth-child(5) {
+body.ui-ready .app-content > *:nth-child(3) {
     animation-delay: 180ms;
 }
 
-.app-content > *:nth-child(6) {
-    animation-delay: 220ms;
+body.ui-ready .app-content > *:nth-child(4) {
+    animation-delay: 250ms;
+}
+
+body.ui-ready .app-content > *:nth-child(5) {
+    animation-delay: 320ms;
+}
+
+body.ui-ready .app-content > *:nth-child(6) {
+    animation-delay: 390ms;
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .app-content > * {
+    body.ui-ready .app-content > * {
         animation: none;
     }
 }

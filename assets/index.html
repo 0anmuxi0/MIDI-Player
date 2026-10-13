@@ -20,63 +20,13 @@
             root.setAttribute('data-theme-mode', mode);
         })();
     </script>
-    <style>
-        /* 启动画面：内联样式 + 不依赖外部资源，随文档立即渲染 */
-        #splash {
-            position: fixed;
-            inset: 0;
-            z-index: 9999;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: #F3F3F3;
-            transition: opacity 220ms ease;
-        }
-
-        html.theme-dark #splash {
-            background: #202020;
-        }
-
-        #splash.is-hidden {
-            opacity: 0;
-            pointer-events: none;
-        }
-
-        #splash img {
-            width: 132px;
-            height: 132px;
-            -webkit-user-drag: none;
-            user-select: none;
-            animation: splashIconIn 340ms cubic-bezier(0.16, 0.84, 0.28, 1) both;
-        }
-
-        @keyframes splashIconIn {
-            from {
-                opacity: 0;
-                transform: scale(0.9);
-            }
-
-            to {
-                opacity: 1;
-                transform: scale(1);
-            }
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-            #splash img {
-                animation: none;
-            }
-        }
-    </style>
     <script src="/Tone.js" defer></script>
     <script src="/midi" defer></script>
-  <script type="module" crossorigin src="/assets/index-BBBaf4-y.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-DnlJAaiw.css">
+  <script type="module" crossorigin src="/assets/index-BoKBo6yU.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-D4IigS9n.css">
 </head>
 <body>
-    <div id="splash" aria-hidden="true">
-        <img src="/app-icon.png" alt="" draggable="false" />
-    </div>
+    <!-- 启动画面由宿主（C++ 用 GDI 居中绘制应用图标）负责，页面内不再重复显示 -->
     <div id="app"></div>
 </body>
 </html>

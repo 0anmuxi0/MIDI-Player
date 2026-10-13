@@ -575,19 +575,14 @@ onMounted(() => {
     })
     .catch(() => { })
 
-  // 界面已渲染：淡出启动画面（等两帧，确保卡片入场动画已经铺开）
-  requestAnimationFrame(() => requestAnimationFrame(dismissSplash))
+  // 卡片入场动画的触发时机：
+  //  · WebView2 宿主：界面显示时由宿主加 .ui-ready，保证动画发生在可见状态下
+  //  · 浏览器环境：页面自己加
+  const hostedByWebView = typeof (window as any).chrome?.webview !== 'undefined'
+  if (!hostedByWebView) {
+    requestAnimationFrame(() => requestAnimationFrame(() => document.body.classList.add('ui-ready')))
+  }
 })
-
-/* ---------------- 启动画面淡出 ---------------- */
-function dismissSplash() {
-  const splash = document.getElementById('splash')
-  if (!splash) return
-  splash.classList.add('is-hidden')
-  const remove = () => splash.remove()
-  splash.addEventListener('transitionend', remove, { once: true })
-  window.setTimeout(remove, 700)
-}
 
 onBeforeUnmount(() => {
   systemDarkRemoval?.()
