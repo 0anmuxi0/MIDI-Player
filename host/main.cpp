@@ -329,12 +329,14 @@ public:
 static const wchar_t* kShimScript = LR"JS(
 (function () {
   if (window.pywebview) return;
-  var listeners = [];
+  // 前端靠 fs() 的返回值（'fullscreen' / 'windowed'）同步全屏 class，这里如实返回
+  var fullscreenState = 'windowed';
   window.pywebview = {
     api: {
       fs: function () {
         try { window.chrome.webview.postMessage(JSON.stringify({ type: 'fullscreen' })); } catch (e) { }
-        return 'ok';
+        fullscreenState = (fullscreenState === 'windowed') ? 'fullscreen' : 'windowed';
+        return fullscreenState;
       }
     },
     token: 'host',
