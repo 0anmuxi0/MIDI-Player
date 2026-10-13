@@ -56,32 +56,32 @@ pnpm install
 pnpm build          # 产物输出到 ../assets（Flask 静态目录）
 ```
 
-### 打包为 exe
+### 构建单文件 exe（C++ / WebView2 宿主，推荐）
+
+宿主是原生 C++：用 WebView2 承载前端，用它的资源拦截替代 Flask（**不启 HTTP 服务器**），
+并把前端产物与音色库以 zip 追加在 exe 尾部、运行时映射进内存按需切片读取（**不产生任何解压**）。
+因此**启动约 0.1 秒**、无需 Python 运行时，并且仍然是单文件分发。
+
+依赖（一次性准备）：
+
+- `clang++`（MinGW-w64 目标；本机用的是 Windhawk 自带的 LLVM 20）
+- [Microsoft.Web.WebView2](https://www.nuget.org/packages/Microsoft.Web.WebView2) SDK 中的 `WebView2.h` 与 `WebView2Loader.dll`
 
 ```bash
-pip install pyinstaller flask pywebview
+# 1) 构建前端产物到 assets/
+cd frontend && pnpm build
 
-# 1) 先把音色库打成单个归档（只需执行一次，改了音色再重跑）
-python tools/pack_soundfonts.py
+# 2) 编译宿主 + 嵌入图标 + 追加资源包
+pwsh -File host/build.ps1
+# 产物：host/build/MIDI Player.exe（约 93 MB，音色内置）
 
-# 2) 打包（音色以 soundfonts.zip 随 exe 携带）
-python -m PyInstaller --noconfirm --onefile --windowed --icon icon.ico ^
-  --hidden-import flask --hidden-import webview ^
-  --collect-all webview ^
-  --add-data "assets;assets" ^
-  --add-data "soundfonts.zip;." ^
-  --distpath "dist" ^
-  "MIDI Player.py"
+# 3) 校验资源包完整性
+"host/build/MIDI Player.exe" --selfcheck
 ```
 
-生成的可执行文件在 `dist/MIDI Player.exe`（约 88 MB）。
-
-> **为什么要先打成 zip**：PyInstaller 单文件模式每次启动都会把打包内容解开到 `%TEMP%`。
-> 若直接打包 `soundfonts/`（4504 个小文件、91 MB），启动要花约 10 秒；
-> 换成单个 `soundfonts.zip` 后启动只需解压这一个文件，**启动时间从约 11 秒降到约 3 秒**，
-> 具体音色在浏览器请求时由 `serve_soundfont` 按需从 zip 中取出，仍然是单文件分发。
->
-> 开发模式（直接 `python "MIDI Player.py"`）无需 zip，会直接读取 `soundfonts/` 目录。
+> 仓库同时保留了旧的 Python 宿主（`MIDI Player.py` + Flask + pywebview）以便对照，
+> 但它在单文件模式下需要先把运行时解压到 `%TEMP%`（即便音色外置也要约 2 秒），
+> 所以默认分发 C++ 宿主。
 
 ### 已打包版本
 前往[Releases](https://github.com/0anmuxi0/MIDI-Player/releases)页面下载构建好的版本
