@@ -7,6 +7,7 @@
 #include <shellapi.h>
 #include <shlwapi.h>
 #include <shlobj.h>
+#include <dwmapi.h>
 
 #include "WebView2.h"
 
@@ -20,6 +21,10 @@ __CRT_UUID_DECL(ICoreWebView2WebResourceRequestedEventHandler,
                 0xab00b74c, 0x15f1, 0x4646, 0x80, 0xe8, 0xe7, 0x63, 0x41, 0xd2, 0x5d, 0x71)
 __CRT_UUID_DECL(ICoreWebView2WebMessageReceivedEventHandler,
                 0x57213f19, 0x00e6, 0x49fa, 0x8e, 0x07, 0x89, 0x8e, 0xa0, 0x1e, 0xcb, 0xd2)
+__CRT_UUID_DECL(ICoreWebView2NavigationCompletedEventHandler,
+                0xd33a35bf, 0x1c49, 0x4f98, 0x93, 0xab, 0x00, 0x6e, 0x05, 0x33, 0xfe, 0x1c)
+__CRT_UUID_DECL(ICoreWebView2Controller2,
+                0xc979903e, 0xd4ca, 0x4228, 0x92, 0xeb, 0x47, 0xee, 0x3f, 0xa9, 0x6e, 0xab)
 #endif
 
 #include <cstdio>
@@ -39,6 +44,36 @@ static ICoreWebView2* g_webview = nullptr;
 static bool g_fullscreen = false;
 static RECT g_windowedRect{};
 static DWORD g_windowedStyle = 0;
+
+// 启动画面（WebView2 就绪前由 GDI 直接绘制应用图标）
+static HICON g_appIconBig = nullptr;
+static HICON g_appIconSmall = nullptr;
+static bool g_splashVisible = true;
+static COLORREF g_themeBg = RGB(32, 32, 32);
+static bool g_darkTheme = true;
+
+#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
+#define DWMWA_USE_IMMERSIVE_DARK_MODE 20
+#endif
+
+// 主题：读配置（light/dark/system），system 时看系统应用主题
+static bool ResolveDarkTheme() {
+    std::string theme;
+    if (g_config.GetString("theme", theme)) {
+        if (theme == "dark") return true;
+        if (theme == "light") return false;
+    }
+    DWORD value = 1;
+    DWORD size = sizeof(value);
+    HKEY key = nullptr;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER,
+                      L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+                      0, KEY_READ, &key) == ERROR_SUCCESS) {
+        RegQueryValueExW(key, L"AppsUseLightTheme", nullptr, nullptr, (LPBYTE)&value, &size);
+        RegCloseKey(key);
+    }
+    return value == 0;
+}
 
 // ---------------------------------------------------------------------------
 // WebView2Loader 动态加载（从资源包释放到临时目录）
@@ -350,8 +385,7 @@ static void ToggleFullscreen() {
     }
 }
 
-class WebMessageHandler : public Callback<ICoreWebView2WebMessageReceivedEventHandler> {
-public:
+class WebMessageHandler : public Callback<ICoreWebView2WebMessageReceivedEventHandler> {public:
     HRESULT STDMETHODCALLTYPE Invoke(ICoreWebView2* /*sender*/,
                                      ICoreWebView2WebMessageReceivedEventArgs* args) override {
         LPWSTR raw = nullptr;
@@ -361,6 +395,21 @@ public:
             if (message.find("fullscreen") != std::string::npos) {
                 ToggleFullscreen();
             }
+        }
+        return S_OK;
+    }
+};
+
+// 导航完成：收起 GDI 启动画面，把画面交给 WebView2
+class NavigationHandler : public Callback<ICoreWebView2NavigationCompletedEventHandler> {
+public:
+    HRESULT STDMETHODCALLTYPE Invoke(ICoreWebView2* /*sender*/,
+                                     ICoreWebView2NavigationCompletedEventArgs* /*args*/) override {
+        if (g_splashVisible) {
+            HostLog("导航完成，收起启动画面");
+            g_splashVisible = false;
+            KillTimer(g_hwnd, 1);
+            InvalidateRect(g_hwnd, nullptr, TRUE);
         }
         return S_OK;
     }
@@ -402,8 +451,21 @@ public:
         EventRegistrationToken token{};
         g_webview->add_WebResourceRequested(new RequestHandler(), &token);
         g_webview->add_WebMessageReceived(new WebMessageHandler(), &token);
+        g_webview->add_NavigationCompleted(new NavigationHandler(), &token);
 
         g_webview->AddScriptToExecuteOnDocumentCreated(kShimScript, nullptr);
+
+        // WebView2 底色跟随主题，避免主界面出现前闪白
+        ICoreWebView2Controller2* controller2 = nullptr;
+        if (SUCCEEDED(g_controller->QueryInterface(IID_PPV_ARGS(&controller2))) && controller2) {
+            COREWEBVIEW2_COLOR color = {};
+            color.A = 255;
+            color.R = GetRValue(g_themeBg);
+            color.G = GetGValue(g_themeBg);
+            color.B = GetBValue(g_themeBg);
+            controller2->put_DefaultBackgroundColor(color);
+            controller2->Release();
+        }
 
         HostLog("Controller: 导航到主界面");
         g_webview->Navigate(L"https://midi.local/index.html");
@@ -457,6 +519,15 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             info->ptMinTrackSize.y = 600;
             return 0;
         }
+        case WM_TIMER:
+            // 兜底：导航回调迟迟不来时也收起启动画面
+            if (wParam == 1 && g_splashVisible) {
+                HostLog("启动画面超时收起");
+                g_splashVisible = false;
+                KillTimer(hwnd, 1);
+                InvalidateRect(hwnd, nullptr, TRUE);
+            }
+            return 0;
         case WM_CLOSE:
             g_config.Save();
             DestroyWindow(hwnd);
@@ -464,8 +535,33 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         case WM_DESTROY:
             PostQuitMessage(0);
             return 0;
-        case WM_ERASEBKGND:
+        case WM_ERASEBKGND: {
+            RECT rc;
+            GetClientRect(hwnd, &rc);
+            HBRUSH brush = CreateSolidBrush(g_themeBg);
+            FillRect((HDC)wParam, &rc, brush);
+            DeleteObject(brush);
             return 1;
+        }
+        case WM_PAINT: {
+            PAINTSTRUCT ps;
+            HDC hdc = BeginPaint(hwnd, &ps);
+            // WebView2 就绪前：填主题底色并居中绘制应用图标
+            if (g_splashVisible) {
+                RECT rc;
+                GetClientRect(hwnd, &rc);
+                HBRUSH brush = CreateSolidBrush(g_themeBg);
+                FillRect(hdc, &rc, brush);
+                DeleteObject(brush);
+                if (g_appIconBig) {
+                    int size = 132;
+                    DrawIconEx(hdc, (rc.right - size) / 2, (rc.bottom - size) / 2,
+                               g_appIconBig, size, size, 0, nullptr, DI_NORMAL);
+                }
+            }
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
         default:
             return DefWindowProcW(hwnd, msg, wParam, lParam);
     }
@@ -524,16 +620,25 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
         return 1;
     }
 
+    // 主题 + 图标（图标资源是 seticon.py 写入的 RT_GROUP_ICON，ID 为 1）
+    g_darkTheme = ResolveDarkTheme();
+    g_themeBg = g_darkTheme ? RGB(32, 32, 32) : RGB(243, 243, 243);
+    g_appIconBig = (HICON)LoadImageW(instance, MAKEINTRESOURCEW(1), IMAGE_ICON, 132, 132, LR_DEFAULTCOLOR);
+    g_appIconSmall = (HICON)LoadImageW(instance, MAKEINTRESOURCEW(1), IMAGE_ICON,
+                                       GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR);
+    if (!g_appIconBig) g_appIconBig = LoadIconW(nullptr, IDI_APPLICATION);
+    if (!g_appIconSmall) g_appIconSmall = g_appIconBig;
+
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof(wc);
     wc.style = CS_HREDRAW | CS_VREDRAW;
     wc.lpfnWndProc = WndProc;
     wc.hInstance = instance;
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    wc.hIcon = LoadIconW(instance, L"IDI_APPICON");
-    wc.hIconSm = wc.hIcon;
+    wc.hIcon = g_appIconBig;
+    wc.hIconSm = g_appIconSmall;
     wc.lpszClassName = L"MIDIPlayerHostWnd";
-    wc.hbrBackground = CreateSolidBrush(RGB(32, 32, 32));
+    wc.hbrBackground = CreateSolidBrush(g_themeBg);
     if (!RegisterClassExW(&wc)) {
         HostLog("窗口类注册失败");
         return 1;
@@ -561,6 +666,15 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
     // 启动画面：先显示一个纯色窗口，WebView2 就绪后立即导航到界面
     ShowWindow(g_hwnd, SW_SHOW);
     UpdateWindow(g_hwnd);
+
+    // 标题栏跟随主题 + 应用图标（含任务栏）
+    BOOL darkMode = g_darkTheme ? TRUE : FALSE;
+    DwmSetWindowAttribute(g_hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &darkMode, sizeof(darkMode));
+    DwmSetWindowAttribute(g_hwnd, 19 /*旧版 Windows 10*/, &darkMode, sizeof(darkMode));
+    SendMessageW(g_hwnd, WM_SETICON, ICON_BIG, (LPARAM)g_appIconBig);
+    SendMessageW(g_hwnd, WM_SETICON, ICON_SMALL, (LPARAM)g_appIconSmall);
+    // 兜底：即使导航回调没回来，也在 4 秒后收起启动画面
+    SetTimer(g_hwnd, 1, 4000, nullptr);
 
     std::wstring userData = UserDataDir();
     HostLog("创建 WebView2 环境（用户数据目录 %ls）", userData.c_str());
