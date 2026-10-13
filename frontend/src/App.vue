@@ -332,8 +332,7 @@ const fileInputEl = ref<HTMLInputElement | null>(null)
 /* 画布高度：null 表示交给 CSS 默认（52vh）；拖拽后写入注册表持久化 */
 const canvasHeight = ref<number | null>(null)
 const resizing = ref(false)
-const MIN_CANVAS_HEIGHT = 220
-const RESERVED_BELOW_CANVAS = 280
+const MIN_CANVAS_HEIGHT = 120
 
 const playing = ref(false)
 const status = ref('请上传 MIDI 文件')
@@ -458,7 +457,8 @@ function onResizeStart(event: PointerEvent) {
   document.body.style.cursor = 'ns-resize'
 
   const onMove = (moveEvent: PointerEvent) => {
-    const maxHeight = Math.max(MIN_CANVAS_HEIGHT, window.innerHeight - RESERVED_BELOW_CANVAS)
+    // 上限由鼠标位置自然决定（可拖到窗口底部，页面不够高就滚动），不再预留下方空间
+    const maxHeight = Math.max(MIN_CANVAS_HEIGHT, window.innerHeight * 1.5)
     const next = startHeight + (moveEvent.clientY - startY)
     canvasHeight.value = Math.round(Math.min(Math.max(next, MIN_CANVAS_HEIGHT), maxHeight))
   }
@@ -564,6 +564,16 @@ onMounted(() => {
   systemDarkRemoval = () => systemThemeQuery?.removeEventListener('change', onSystemThemeChange)
 
   onStateReady()
+
+  // 检查音色库是否就位（外置分发时用户可能漏了 soundfonts.zip）
+  fetch('/api/env')
+    .then(r => r.json())
+    .then(env => {
+      if (env && env.soundfonts === false) {
+        status.value = '未找到音色库：请把 soundfonts.zip 放到程序同目录后重启'
+      }
+    })
+    .catch(() => { })
 
   // 界面已渲染：淡出启动画面（等两帧，确保卡片入场动画已经铺开）
   requestAnimationFrame(() => requestAnimationFrame(dismissSplash))

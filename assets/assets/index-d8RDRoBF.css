@@ -3966,12 +3966,17 @@ body {
 .canvas-card {
     padding: 0;
     overflow: hidden;
+    /* 让内部画布容器跟随卡片高度（拖拽调整高度时画面要一起长） */
+    display: flex;
+    flex-direction: column;
 }
 
 .canvas-wrapper {
     position: relative;
     width: 100%;
-    /* 首屏内为控制栏留出空间 */
+    flex: 1 1 auto;
+    min-height: 0;
+    /* 卡片未指定高度时的默认高度（拖拽后由卡片高度接管） */
     height: clamp(260px, 52vh, 640px);
     background: var(--canvas-bg, var(--app-bg));
     border-radius: 8px;

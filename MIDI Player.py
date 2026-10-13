@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import sys
 import threading
 import time
 import winreg
@@ -29,9 +30,22 @@ def boot_log(message):
 BASE_DIR = Path(__file__).parent.resolve()
 SRC_DIR = BASE_DIR / "assets"
 SOUNDFONTS_DIR = BASE_DIR / "soundfonts"
-# 打包后音色以单个 zip 随 exe 携带：启动只需解压这 1 个文件，
+
+
+def resolve_soundfonts_zip():
+    """音色归档查找顺序：exe 同目录（外置，启动无需解压）→ 打包内置 → 项目目录。"""
+    candidates = []
+    if getattr(sys, "frozen", False):
+        candidates.append(Path(sys.executable).parent / "soundfonts.zip")
+    candidates.append(BASE_DIR / "soundfonts.zip")
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return candidates[0]
+
+
 # 具体音色在浏览器请求时按需从 zip 中取出（无需整包解开）
-SOUNDFONTS_ZIP = BASE_DIR / "soundfonts.zip"
+SOUNDFONTS_ZIP = resolve_soundfonts_zip()
 app = Flask(__name__, static_folder=str(SRC_DIR), static_url_path="")
 import logging
 log = logging.getLogger('werkzeug')
@@ -75,6 +89,16 @@ def handle_config():
         return jsonify({"status": "ok"})
     cfg = load_config_from_registry()
     return jsonify(cfg)
+@app.route("/api/env")
+def handle_env():
+    """给前端的运行环境信息（主要是音色库是否就位）。"""
+    return jsonify({
+        "soundfonts": SOUNDFONTS_DIR.is_dir() or SOUNDFONTS_ZIP.is_file(),
+        "soundfontsPath": str(SOUNDFONTS_ZIP),
+        "frozen": bool(getattr(sys, "frozen", False)),
+    })
+
+
 @app.route("/api/soundfonts/<path:subpath>")
 def serve_soundfont(subpath):
     """音色按需读取：开发模式读目录；打包模式从 zip 中只取用到的那个文件。"""
@@ -145,15 +169,34 @@ def resolve_background_color():
     except (FileNotFoundError, OSError):
         return THEME_BACKGROUNDS["light"]
 
+SPLASH_PAGE = SRC_DIR / "splash.html"
+
+
+def wait_for_flask(timeout=20.0):
+    """等 Flask 开始响应，然后才把窗口切到主界面。"""
+    import urllib.request
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen("http://127.0.0.1:8000/", timeout=0.5):
+                return True
+        except Exception:
+            time.sleep(0.08)
+    return False
+
+
 if __name__ == "__main__":
     boot_log("开始启动（无提权）")
     width, height = load_window_size()
     t = threading.Thread(target=start_flask, daemon=True)
     t.start()
     boot_log("Flask 线程已启动")
+
+    # 先把窗口指向本地启动画面（纯静态、无依赖），让窗口尽早出现
+    splash_url = SPLASH_PAGE.as_uri() if SPLASH_PAGE.is_file() else "http://127.0.0.1:8000"
     window = webview.create_window(
         "MIDI 可视化播放器",
-        url="http://127.0.0.1:8000",
+        url=splash_url,
         js_api=api,
         width=width,
         height=height,
@@ -163,6 +206,18 @@ if __name__ == "__main__":
         background_color=resolve_background_color()
     )
     api.set_window(window)
-    boot_log("窗口对象已创建，开始 webview.start()")
+    boot_log("窗口对象已创建（启动画面），开始 webview.start()")
+
+    def bootstrap():
+        wait_for_flask()
+        boot_log("Flask 就绪，准备切换主界面")
+        time.sleep(0.12)  # 让启动画面稳定显示一小会，避免一闪而过
+        try:
+            window.load_url("http://127.0.0.1:8000")
+            boot_log("已切换到主界面")
+        except Exception as exc:
+            boot_log(f"切换主界面失败: {exc}")
+
+    threading.Thread(target=bootstrap, daemon=True).start()
     webview.start()
     boot_log("webview 已退出")
