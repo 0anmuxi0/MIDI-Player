@@ -259,16 +259,26 @@
       @PrimaryButtonClick="onUpdatePrimary"
       @CloseButtonClick="onUpdateDismiss">
       <WinTextBlock :Text="update.message" TextWrapping="Wrap" />
-      <div v-if="update.showProgress" class="update-progress">
-        <WinProgressBar :Value="update.percent" :Maximum="100" />
-        <WinTextBlock class="update-percent" :Text="update.percent + '%'" />
+      <div v-if="update.showProgress" class="update-progress-wrap">
+        <div class="update-progress">
+          <WinProgressBar :Value="update.percent" :Maximum="100" />
+          <WinTextBlock class="update-percent" :Text="update.percent + '%'" />
+        </div>
+        <!-- 分块进度（类似下载器的线程状态列表） -->
+        <div v-if="update.chunks.length" class="update-chunks">
+          <div v-for="(chunk, index) in update.chunks" :key="index" class="update-chunk">
+            <WinTextBlock class="update-chunk-index" :Text="String(index + 1)" />
+            <WinProgressBar class="update-chunk-bar" :Value="chunk.percent" :Maximum="100" />
+            <WinTextBlock class="update-chunk-status" :Text="chunkStatusText(chunk)" />
+          </div>
+        </div>
       </div>
     </WinContentDialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import WinTextBlock from './winui/components/WinTextBlock.vue'
 import WinButton from './winui/components/WinButton.vue'
 import WinContentDialog from './winui/components/WinContentDialog.vue'
@@ -357,7 +367,21 @@ const update = ref({
   closeText: '',
   primaryEnabled: true,
   showProgress: false,
-  percent: 0
+  percent: 0,
+  chunks: [] as { status: number; percent: number }[]
+})
+
+/** 分块状态文案（0 等待 / 1 下载中 / 2 完成 / 3 失败） */
+function chunkStatusText(chunk: { status: number; percent: number }) {
+  if (chunk.status === 2) return '完成'
+  if (chunk.status === 3) return '失败'
+  if (chunk.status === 1) return chunk.percent + '%'
+  return '等待'
+}
+
+// 弹窗打开时锁住背景滚动（否则遮罩后的内容还能滚，不像模态框）
+watch(() => update.value.visible, (visible) => {
+  document.body.classList.toggle('modal-open', visible)
 })
 
 function hostPost(payload: Record<string, unknown>) {
@@ -378,11 +402,12 @@ function showUpdateAvailable(version: string, current: string) {
     closeText: '稍后',
     primaryEnabled: true,
     showProgress: false,
-    percent: 0
+    percent: 0,
+    chunks: []
   }
 }
 
-function showUpdateProgress(percent: number) {
+function showUpdateProgress(percent: number, chunks?: { status: number; percent: number }[]) {
   const stage = update.value.stage
   if (stage !== 'downloading' && stage !== 'available') return
   update.value.stage = 'downloading'
@@ -393,6 +418,7 @@ function showUpdateProgress(percent: number) {
   update.value.primaryEnabled = false
   update.value.showProgress = true
   update.value.percent = Math.max(0, Math.min(100, percent))
+  if (chunks && chunks.length) update.value.chunks = chunks
 }
 
 function showUpdateReady(version: string) {
@@ -406,7 +432,8 @@ function showUpdateReady(version: string) {
     closeText: '稍后重启',
     primaryEnabled: true,
     showProgress: false,
-    percent: 100
+    percent: 100,
+    chunks: []
   }
 }
 
@@ -421,7 +448,8 @@ function showUpdateFailed(version: string) {
     closeText: '关闭',
     primaryEnabled: true,
     showProgress: false,
-    percent: 0
+    percent: 0,
+    chunks: []
   }
 }
 
@@ -445,7 +473,7 @@ function onHostUpdateMessage(event: Event) {
   if (!payload || typeof payload.type !== 'string') return
   switch (payload.type) {
     case 'update-available': showUpdateAvailable(payload.version, payload.current); break
-    case 'update-progress': showUpdateProgress(payload.percent); break
+    case 'update-progress': showUpdateProgress(payload.percent, payload.chunks); break
     case 'update-downloaded': showUpdateReady(payload.version); break
     case 'update-failed': showUpdateFailed(payload.version); break
   }

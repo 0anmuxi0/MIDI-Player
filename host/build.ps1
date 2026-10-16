@@ -42,7 +42,7 @@ $compileArgs = @(
     '-o', $exe,
     '-lole32', '-loleaut32', '-luuid', '-lshlwapi',
     '-ladvapi32', '-lshell32', '-luser32', '-lgdi32', '-lcomdlg32',
-    '-ldwmapi', '-lurlmon'
+    '-ldwmapi', '-lurlmon', '-lwinhttp'
 )
 Write-Host 'Compiling ...'
 & $clang @compileArgs

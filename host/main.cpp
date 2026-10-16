@@ -9,6 +9,7 @@
 #include <shlobj.h>
 #include <dwmapi.h>
 #include <urlmon.h>
+#include <winhttp.h>
 
 #include "WebView2.h"
 
@@ -688,13 +689,203 @@ static DWORD WINAPI UpdateCheckThread(LPVOID) {
     return 0;
 }
 
-// 下载进度回调：把百分比回传给窗口线程
-class DownloadProgress : public IBindStatusCallback {
+// ---------------------------------------------------------------------------
+// 多线程分块下载（类似 IDM：文件切成若干段并行拉取，并汇报每段状态）
+// ---------------------------------------------------------------------------
+static const int kMaxChunks = 8;
+
+struct ChunkInfo {
+    uint64_t start = 0;
+    uint64_t end = 0;
+    uint64_t received = 0;
+    int status = 0;   // 0=等待 1=下载中 2=完成 3=失败
+};
+
+static ChunkInfo g_chunks[kMaxChunks];
+static int g_chunkCount = 0;
+static uint64_t g_downloadTotal = 0;
+static CRITICAL_SECTION g_chunkCs;
+static bool g_chunkCsReady = false;
+static int g_dlDiag = 0;   // 下载诊断码（--test-download 用）
+
+// 解析 URL 并把指定字节区间落到文件的对应偏移
+static bool DownloadRange(const std::wstring& url, const std::wstring& filePath,
+                          uint64_t start, uint64_t end, int chunkIndex, bool useRange = true) {
+    URL_COMPONENTS uc{};
+    uc.dwStructSize = sizeof(uc);
+    wchar_t host[256] = {0};
+    wchar_t urlPath[2048] = {0};
+    uc.lpszHostName = host;
+    uc.dwSchemeLength = (DWORD)-1;   // 必须给 scheme 长度，否则 nScheme 为 0，会把 HTTPS 当成 HTTP
+    uc.dwHostNameLength = ARRAYSIZE(host);
+    uc.lpszUrlPath = urlPath;
+    uc.dwUrlPathLength = ARRAYSIZE(urlPath);
+    if (!WinHttpCrackUrl(url.c_str(), (DWORD)url.size(), 0, &uc)) return false;
+
+    HINTERNET session = WinHttpOpen(L"MIDI-Player/2.2", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                                    WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!session) return false;
+
+    HINTERNET connect = WinHttpConnect(session, host, uc.nPort, 0);
+    HINTERNET request = connect ? WinHttpOpenRequest(connect, L"GET", urlPath, nullptr,
+                                                     WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
+                                                     uc.nScheme == INTERNET_SCHEME_HTTPS ? WINHTTP_FLAG_SECURE : 0)
+                                : nullptr;
+    bool ok = false;
+
+    if (request) {
+        // GitHub 的下载会 302 到 CDN，必须允许自动跟随
+        DWORD policy = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
+        WinHttpSetOption(request, WINHTTP_OPTION_REDIRECT_POLICY, &policy, sizeof(policy));
+
+        if (useRange) {
+            wchar_t rangeHeader[128];
+            swprintf(rangeHeader, ARRAYSIZE(rangeHeader), L"Range: bytes=%llu-%llu",
+                     (unsigned long long)start, (unsigned long long)end);
+            WinHttpAddRequestHeaders(request, rangeHeader, (DWORD)-1L, WINHTTP_ADDREQ_FLAG_ADD);
+        }
+
+        if (WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0, nullptr, 0, 0, 0) &&
+            WinHttpReceiveResponse(request, nullptr)) {
+            HANDLE file = CreateFileW(filePath.c_str(), GENERIC_WRITE, FILE_SHARE_WRITE, nullptr,
+                                      OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+            if (file != INVALID_HANDLE_VALUE) {
+                LARGE_INTEGER pos{};
+                pos.QuadPart = (LONGLONG)start;
+                SetFilePointerEx(file, pos, nullptr, FILE_BEGIN);
+
+                std::vector<uint8_t> buffer(256 * 1024);
+                uint64_t written = 0;
+                ok = true;
+                while (true) {
+                    DWORD read = 0;
+                    if (!WinHttpReadData(request, buffer.data(), (DWORD)buffer.size(), &read) || read == 0) break;
+                    DWORD wrote = 0;
+                    if (!WriteFile(file, buffer.data(), read, &wrote, nullptr) || wrote != read) {
+                        ok = false;
+                        break;
+                    }
+                    written += wrote;
+                    EnterCriticalSection(&g_chunkCs);
+                    g_chunks[chunkIndex].received = written;
+                    LeaveCriticalSection(&g_chunkCs);
+                }
+                CloseHandle(file);
+            }
+        }
+    }
+
+    if (request) WinHttpCloseHandle(request);
+    if (connect) WinHttpCloseHandle(connect);
+    WinHttpCloseHandle(session);
+    return ok;
+}
+
+struct ChunkTask {
+    int index;
+};
+
+static DWORD WINAPI ChunkThread(LPVOID param) {
+    ChunkTask* task = (ChunkTask*)param;
+    int index = task->index;
+    delete task;
+
+    EnterCriticalSection(&g_chunkCs);
+    uint64_t start = g_chunks[index].start;
+    uint64_t end = g_chunks[index].end;
+    g_chunks[index].status = 1;
+    LeaveCriticalSection(&g_chunkCs);
+
+    bool ok = DownloadRange(g_updateUrl, g_updatePath, start, end, index);
+
+    EnterCriticalSection(&g_chunkCs);
+    g_chunks[index].status = ok ? 2 : 3;
+    if (ok) g_chunks[index].received = end - start + 1;
+    LeaveCriticalSection(&g_chunkCs);
+    return 0;
+}
+
+// 探测远端大小与是否支持 Range（支持才能分块）
+static bool ProbeRemote(const std::wstring& url, uint64_t& totalSize) {
+    URL_COMPONENTS uc{};
+    uc.dwStructSize = sizeof(uc);
+    wchar_t host[256] = {0};
+    wchar_t urlPath[2048] = {0};
+    uc.lpszHostName = host;
+    uc.dwSchemeLength = (DWORD)-1;   // 必须给 scheme 长度，否则 nScheme 为 0，会把 HTTPS 当成 HTTP
+    uc.dwHostNameLength = ARRAYSIZE(host);
+    uc.lpszUrlPath = urlPath;
+    uc.dwUrlPathLength = ARRAYSIZE(urlPath);
+    if (!WinHttpCrackUrl(url.c_str(), (DWORD)url.size(), 0, &uc)) return false;
+
+    HINTERNET session = WinHttpOpen(L"MIDI-Player/2.2", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                                    WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!session) return false;
+    HINTERNET connect = WinHttpConnect(session, host, uc.nPort, 0);
+    HINTERNET request = connect ? WinHttpOpenRequest(connect, L"HEAD", urlPath, nullptr,
+                                                     WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
+                                                     uc.nScheme == INTERNET_SCHEME_HTTPS ? WINHTTP_FLAG_SECURE : 0)
+                                : nullptr;
+    bool ok = false;
+    if (request) {
+        DWORD policy = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
+        WinHttpSetOption(request, WINHTTP_OPTION_REDIRECT_POLICY, &policy, sizeof(policy));
+        if (WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0, nullptr, 0, 0, 0) &&
+            WinHttpReceiveResponse(request, nullptr)) {
+            // 读取 Content-Length
+            wchar_t lengthText[64] = {0};
+            DWORD lengthSize = sizeof(lengthText);
+            DWORD statusCode = 0;
+            DWORD statusSize = sizeof(statusCode);
+            WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                                WINHTTP_HEADER_NAME_BY_INDEX, &statusCode, &statusSize, WINHTTP_NO_HEADER_INDEX);
+            if (WinHttpQueryHeaders(request, WINHTTP_QUERY_CONTENT_LENGTH,
+                                    WINHTTP_HEADER_NAME_BY_INDEX, lengthText, &lengthSize, WINHTTP_NO_HEADER_INDEX)) {
+                uint64_t value = _wcstoui64(lengthText, nullptr, 10);
+                if (value > 0) {
+                    totalSize = value;
+                    ok = (statusCode == 200);
+                }
+            }
+        }
+    }
+    if (request) WinHttpCloseHandle(request);
+    if (connect) WinHttpCloseHandle(connect);
+    WinHttpCloseHandle(session);
+    return ok;
+}
+
+// 汇报总进度 + 每块状态
+static void ReportDownloadProgress() {
+    EnterCriticalSection(&g_chunkCs);
+    uint64_t received = 0;
+    std::wstring chunks = L"[";
+    for (int i = 0; i < g_chunkCount; ++i) {
+        received += g_chunks[i].received;
+        uint64_t length = g_chunks[i].end - g_chunks[i].start + 1;
+        int percent = length ? (int)(g_chunks[i].received * 100 / length) : 0;
+        if (i) chunks += L",";
+        chunks += L"{\"status\":" + std::to_wstring(g_chunks[i].status) +
+                  L",\"percent\":" + std::to_wstring(percent) + L"}";
+    }
+    LeaveCriticalSection(&g_chunkCs);
+
+    int overall = g_downloadTotal ? (int)(received * 100 / g_downloadTotal) : 0;
+    if (overall > 100) overall = 100;
+    PostUpdateMessage(L"{\"type\":\"update-progress\",\"percent\":" + std::to_wstring(overall) +
+                      L",\"chunks\":" + chunks + L"}");
+}
+
+// 汇报总进度 + 每块状态（前置声明，回退下载的回调里会用到）
+static void ReportDownloadProgress();
+
+// 单线程回退时用的进度回调（URLDownloadToFile 走这个）
+class SimpleProgress : public IBindStatusCallback {
 public:
     ULONG ref_ = 1;
     DWORD lastPercent_ = 0xFFFFFFFF;
 
-    virtual ~DownloadProgress() = default;
+    virtual ~SimpleProgress() = default;
 
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
         if (!ppv) return E_POINTER;
@@ -717,11 +908,16 @@ public:
     HRESULT STDMETHODCALLTYPE GetPriority(LONG*) override { return S_OK; }
     HRESULT STDMETHODCALLTYPE OnLowResource(DWORD) override { return S_OK; }
     HRESULT STDMETHODCALLTYPE OnProgress(ULONG progress, ULONG total, ULONG, LPCWSTR) override {
-        if (total > 0 && g_hwnd) {
+        if (total > 0) {
             DWORD percent = (DWORD)((uint64_t)progress * 100 / total);
+            if (g_chunkCsReady) {
+                EnterCriticalSection(&g_chunkCs);
+                if (g_chunkCount > 0) g_chunks[0].received = progress;
+                LeaveCriticalSection(&g_chunkCs);
+            }
             if (percent != lastPercent_) {
                 lastPercent_ = percent;
-                PostMessageW(g_hwnd, WM_APP_UPDATE_PROGRESS, (WPARAM)percent, 0);
+                ReportDownloadProgress();
             }
         }
         return S_OK;
@@ -733,18 +929,114 @@ public:
 };
 
 static DWORD WINAPI UpdateDownloadThread(LPVOID) {
-    wchar_t temp[MAX_PATH] = {0};
-    GetTempPathW(MAX_PATH, temp);
-    g_updatePath = std::wstring(temp) + L"MIDI-Player-Update.exe";
+    // 更新包路径：优先 LOCALAPPDATA（必定可写），其次 TEMP
+    wchar_t dir[MAX_PATH] = {0};
+    if (GetEnvironmentVariableW(L"LOCALAPPDATA", dir, MAX_PATH) == 0) {
+        if (!GetTempPathW(MAX_PATH, dir)) dir[0] = 0;
+    }
+    std::wstring base = dir;
+    if (!base.empty() && base.back() != L'\\') base += L'\\';
+    g_updatePath = base + L"MIDI-Player-Update.exe";
     DeleteFileW(g_updatePath.c_str());
 
-    HostLog("开始下载更新 …");
-    DownloadProgress* progress = new DownloadProgress();
-    HRESULT hr = URLDownloadToFileW(nullptr, g_updateUrl.c_str(), g_updatePath.c_str(), 0, progress);
-    progress->Release();
+    HostLog("开始下载更新（多线程）…");
+    g_dlDiag = 1;
+    if (!g_chunkCsReady) {
+        InitializeCriticalSection(&g_chunkCs);
+        g_chunkCsReady = true;
+    }
 
-    bool ok = SUCCEEDED(hr) && GetFileAttributesW(g_updatePath.c_str()) != INVALID_FILE_ATTRIBUTES;
-    HostLog(ok ? "更新下载完成" : "更新下载失败");
+    uint64_t totalSize = 0;
+    bool canSplit = ProbeRemote(g_updateUrl, totalSize);
+    HostLog("远端大小探测: total=%llu 分块支持=%s", (unsigned long long)totalSize, canSplit ? "是" : "否");
+    g_dlDiag = canSplit ? 2 : 20;
+    if (totalSize > 0) g_dlDiag = canSplit ? 2 : 21;
+
+    // 先建好目标文件并预置大小
+    HANDLE file = CreateFileW(g_updatePath.c_str(), GENERIC_WRITE, 0, nullptr,
+                              CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) {
+        HostLog("无法创建更新文件: %ls", g_updatePath.c_str());
+        g_dlDiag = 3;
+        if (g_hwnd) PostMessageW(g_hwnd, WM_APP_UPDATE_READY, 1, 0);
+        return 0;
+    }
+    if (totalSize > 0) {
+        LARGE_INTEGER size{};
+        size.QuadPart = (LONGLONG)totalSize;
+        SetFilePointerEx(file, size, nullptr, FILE_BEGIN);
+        SetEndOfFile(file);
+    }
+    CloseHandle(file);
+
+    if (totalSize == 0 || !canSplit) {
+        // 回退：单线程下载（URLDownloadToFile 对重定向与 TLS 的兼容性最好）
+        HostLog("回退单线程下载 …");
+        g_downloadTotal = 100;
+        g_chunkCount = 1;
+        EnterCriticalSection(&g_chunkCs);
+        g_chunks[0].start = 0;
+        g_chunks[0].end = 100;
+        g_chunks[0].received = 0;
+        g_chunks[0].status = 1;
+        LeaveCriticalSection(&g_chunkCs);
+
+        SimpleProgress* progress = new SimpleProgress();
+        HRESULT hr = URLDownloadToFileW(nullptr, g_updateUrl.c_str(), g_updatePath.c_str(), 0, progress);
+        progress->Release();
+
+        bool ok = SUCCEEDED(hr) && GetFileAttributesW(g_updatePath.c_str()) != INVALID_FILE_ATTRIBUTES;
+        EnterCriticalSection(&g_chunkCs);
+        g_chunks[0].status = ok ? 2 : 3;
+        if (ok) g_chunks[0].received = 100;
+        LeaveCriticalSection(&g_chunkCs);
+        ReportDownloadProgress();
+        HostLog(ok ? "更新下载完成（单线程）" : "更新下载失败");
+        g_dlDiag = ok ? 10 : 11;
+        if (g_hwnd) PostMessageW(g_hwnd, WM_APP_UPDATE_READY, ok ? 0 : 1, 0);
+        return 0;
+    }
+
+    // 分块
+    g_downloadTotal = totalSize;
+    g_chunkCount = kMaxChunks;
+    uint64_t chunkSize = (totalSize + kMaxChunks - 1) / kMaxChunks;
+    std::vector<HANDLE> threads;
+    for (int i = 0; i < g_chunkCount; ++i) {
+        uint64_t start = (uint64_t)i * chunkSize;
+        uint64_t end = start + chunkSize - 1;
+        if (end >= totalSize) end = totalSize - 1;
+        EnterCriticalSection(&g_chunkCs);
+        g_chunks[i].start = start;
+        g_chunks[i].end = end;
+        g_chunks[i].received = 0;
+        g_chunks[i].status = 0;
+        LeaveCriticalSection(&g_chunkCs);
+
+        ChunkTask* task = new ChunkTask();
+        task->index = i;
+        HANDLE thread = CreateThread(nullptr, 0, ChunkThread, task, 0, nullptr);
+        if (thread) threads.push_back(thread);
+    }
+    HostLog("已启动 %zu 个下载线程，每块 %llu 字节", threads.size(), (unsigned long long)chunkSize);
+
+    // 等所有线程结束，同时持续汇报进度
+    while (true) {
+        DWORD wait = WaitForMultipleObjects((DWORD)threads.size(), threads.data(), TRUE, 250);
+        ReportDownloadProgress();
+        if (wait != WAIT_TIMEOUT) break;
+    }
+    for (HANDLE thread : threads) CloseHandle(thread);
+
+    bool ok = true;
+    EnterCriticalSection(&g_chunkCs);
+    for (int i = 0; i < g_chunkCount; ++i) {
+        if (g_chunks[i].status != 2) ok = false;
+    }
+    LeaveCriticalSection(&g_chunkCs);
+
+    HostLog(ok ? "更新下载完成（多线程）" : "更新下载失败");
+    g_dlDiag = ok ? 10 : 12;
     if (g_hwnd) PostMessageW(g_hwnd, WM_APP_UPDATE_READY, ok ? 0 : 1, 0);
     return 0;
 }
@@ -752,9 +1044,13 @@ static DWORD WINAPI UpdateDownloadThread(LPVOID) {
 static void ApplyUpdateAndRestart() {
     wchar_t self[MAX_PATH] = {0};
     GetModuleFileNameW(nullptr, self, MAX_PATH);
-    wchar_t temp[MAX_PATH] = {0};
-    GetTempPathW(MAX_PATH, temp);
-    std::wstring scriptPath = std::wstring(temp) + L"midi-player-update.cmd";
+    wchar_t dir[MAX_PATH] = {0};
+    if (GetEnvironmentVariableW(L"LOCALAPPDATA", dir, MAX_PATH) == 0) {
+        if (!GetTempPathW(MAX_PATH, dir)) dir[0] = 0;
+    }
+    std::wstring dirText = dir;
+    if (!dirText.empty() && dirText.back() != L'\\') dirText += L'\\';
+    std::wstring scriptPath = dirText + L"midi-player-update.cmd";
 
     std::wstring script;
     script += L"@echo off\r\n";
@@ -900,6 +1196,53 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
     HostLog("======== 启动 ========");
+
+    // 命令行自检 / 下载测试（不需要资源包，也不显示界面）
+    {
+        int argc = 0;
+        LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+        bool selfCheck = false;
+        bool testDownload = false;
+        if (argv && argc >= 2) {
+            if (wcscmp(argv[1], L"--selfcheck") == 0) selfCheck = true;
+            if (wcscmp(argv[1], L"--test-download") == 0) testDownload = true;
+        }
+        if (testDownload) {
+            std::wstring url = L"https://github.com/0anmuxi0/MIDI-Player/releases/latest/download/MIDI.Player.exe";
+            if (argc >= 3) url = argv[2];
+            if (argv) LocalFree(argv);
+            g_updateUrl = url;
+            if (!g_chunkCsReady) {
+                InitializeCriticalSection(&g_chunkCs);
+                g_chunkCsReady = true;
+            }
+            DWORD start = GetTickCount();
+            UpdateDownloadThread(nullptr);
+            DWORD elapsed = GetTickCount() - start;
+            uint64_t size = 0;
+            HANDLE handle = CreateFileW(g_updatePath.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                                        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+            if (handle != INVALID_HANDLE_VALUE) {
+                LARGE_INTEGER len{};
+                GetFileSizeEx(handle, &len);
+                size = (uint64_t)len.QuadPart;
+                CloseHandle(handle);
+            }
+            double seconds = elapsed / 1000.0;
+            HostLog("下载测试结束: %llu 字节, 用时 %.2f 秒, 平均 %.1f KB/s",
+                    (unsigned long long)size, seconds,
+                    seconds > 0 ? (size / 1024.0 / seconds) : 0.0);
+
+            // 退出码 = 诊断码（1 起步 2 探测成功 3 建文件失败 10 成功 11/12 下载失败 20/21 不支持分块）
+            if (g_dlDiag != 0) return g_dlDiag;
+            return size > 0 ? 0 : 1;
+        }
+        if (argv) LocalFree(argv);
+        if (selfCheck) {
+            // 继续走下面的资源包自检
+        }
+    }
+
     if (!g_payload.Open()) {
         MessageBoxW(nullptr, L"资源包缺失或损坏（exe 未经打包脚本处理）。", kAppTitle, MB_ICONERROR);
         return 1;

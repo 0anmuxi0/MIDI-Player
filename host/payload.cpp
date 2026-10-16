@@ -43,9 +43,21 @@ std::wstring Utf8ToWide(const std::string& value) {
 // 日志
 // ---------------------------------------------------------------------------
 void HostLog(const char* format, ...) {
-    wchar_t temp[MAX_PATH] = {0};
-    if (!GetTempPathW(MAX_PATH, temp)) return;
-    std::wstring path = std::wstring(temp) + L"midi-player-host.log";
+    // 优先用 LOCALAPPDATA，其次 TEMP，最后 exe 所在目录
+    wchar_t dir[MAX_PATH] = {0};
+    if (GetEnvironmentVariableW(L"LOCALAPPDATA", dir, MAX_PATH) == 0) {
+        if (!GetTempPathW(MAX_PATH, dir)) {
+            GetModuleFileNameW(nullptr, dir, MAX_PATH);
+            std::wstring self(dir);
+            size_t pos = self.find_last_of(L'\\');
+            if (pos == std::wstring::npos) return;
+            std::wstring folder = self.substr(0, pos);
+            if (folder.size() >= MAX_PATH) return;
+            wcsncpy(dir, folder.c_str(), MAX_PATH - 1);
+            dir[MAX_PATH - 1] = 0;
+        }
+    }
+    std::wstring path = std::wstring(dir) + L"\\midi-player-host.log";
 
     char buffer[2048];
     va_list args;

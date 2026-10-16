@@ -1,4 +1,4 @@
-/* ============================================================================
+﻿/* ============================================================================
    MIDI 播放器布局层
    控件外观全部来自 WinUIonWeb 组件自身的样式与 theme.css 设计令牌，
    此文件只负责页面骨架、卡片容器与画布区域。
@@ -535,12 +535,21 @@ body.ui-ready .app-content > *:nth-child(6) {
     background: var(--accent-base);
 }
 
-/* ==================== 更新对话框内的进度条 ==================== */
+/* ==================== 弹窗打开时锁定背景滚动 ==================== */
+body.modal-open {
+    overflow: hidden;
+}
+
+/* ==================== 更新对话框内的进度显示 ==================== */
+.update-progress-wrap {
+    margin-top: 14px;
+    width: 100%;
+}
+
 .update-progress {
     display: flex;
     align-items: center;
     gap: 12px;
-    margin-top: 16px;
     width: 100%;
 }
 
@@ -556,4 +565,42 @@ body.ui-ready .app-content > *:nth-child(6) {
     font-size: 12px;
     font-variant-numeric: tabular-nums;
     color: var(--text-secondary);
+}
+
+/* 分块列表：每行一个下载线程的状态 */
+.update-chunks {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 180px;
+    overflow-y: auto;
+}
+
+.update-chunk {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+}
+
+.update-chunk-index {
+    flex: 0 0 auto;
+    width: 16px;
+    text-align: right;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
+.update-chunk-bar {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.update-chunk-status {
+    flex: 0 0 auto;
+    width: 46px;
+    text-align: right;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
 }
