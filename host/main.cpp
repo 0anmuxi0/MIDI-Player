@@ -8,8 +8,11 @@
 #include <shlwapi.h>
 #include <shlobj.h>
 #include <dwmapi.h>
+#include <urlmon.h>
 
 #include "WebView2.h"
+
+#include <cctype>
 
 #ifdef __MINGW32__
 // MinGW 不像 MSVC 那样从 MIDL_INTERFACE 属性推导 GUID，需要显式声明
@@ -73,6 +76,35 @@ static bool ResolveDarkTheme() {
         RegCloseKey(key);
     }
     return value == 0;
+}
+
+// 应用主题：标题栏 + 窗口底色 + WebView2 默认底色，可在运行时反复调用
+static void ApplyTheme(bool dark) {
+    g_darkTheme = dark;
+    g_themeBg = dark ? RGB(32, 32, 32) : RGB(243, 243, 243);
+
+    if (g_hwnd) {
+        BOOL darkMode = dark ? TRUE : FALSE;
+        DwmSetWindowAttribute(g_hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &darkMode, sizeof(darkMode));
+        DwmSetWindowAttribute(g_hwnd, 19 /*旧版 Windows 10*/, &darkMode, sizeof(darkMode));
+        // 触发标题栏重绘
+        SetWindowPos(g_hwnd, nullptr, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+        RedrawWindow(g_hwnd, nullptr, nullptr, RDW_FRAME | RDW_INVALIDATE);
+    }
+
+    if (g_controller) {
+        ICoreWebView2Controller2* controller2 = nullptr;
+        if (SUCCEEDED(g_controller->QueryInterface(IID_PPV_ARGS(&controller2))) && controller2) {
+            COREWEBVIEW2_COLOR color = {};
+            color.A = 255;
+            color.R = GetRValue(g_themeBg);
+            color.G = GetGValue(g_themeBg);
+            color.B = GetBValue(g_themeBg);
+            controller2->put_DefaultBackgroundColor(color);
+            controller2->Release();
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -405,6 +437,12 @@ class WebMessageHandler : public Callback<ICoreWebView2WebMessageReceivedEventHa
             if (message.find("ui-ready") != std::string::npos) {
                 HostLog("页面已开始播放入场动画");
             }
+            // 页面切换主题：立即同步标题栏与窗口底色，无需重启
+            if (message.find("\"type\":\"theme\"") != std::string::npos) {
+                bool dark = message.find("\"dark\":true") != std::string::npos;
+                HostLog("主题切换为 %s", dark ? "深色" : "浅色");
+                ApplyTheme(dark);
+            }
             if (message.find("fullscreen") != std::string::npos) {
                 ToggleFullscreen();
             }
@@ -515,6 +553,165 @@ public:
 };
 
 // ---------------------------------------------------------------------------
+// 自动更新：检查 GitHub Releases，下载后由批处理替换自身并重启
+// ---------------------------------------------------------------------------
+#define WM_APP_UPDATE_FOUND (WM_APP + 1)
+#define WM_APP_UPDATE_READY (WM_APP + 2)
+
+static std::wstring g_updateUrl;
+static std::wstring g_updateTag;
+static std::wstring g_updatePath;
+
+// 把 URL 内容下载成字符串（走 urlmon，自动处理 TLS）
+static std::string DownloadToString(const std::wstring& url) {
+    wchar_t temp[MAX_PATH] = {0};
+    if (!GetTempPathW(MAX_PATH, temp)) return std::string();
+    std::wstring file = std::wstring(temp) + L"midi-update-probe.json";
+    DeleteFileW(file.c_str());
+    if (FAILED(URLDownloadToFileW(nullptr, url.c_str(), file.c_str(), 0, nullptr))) return std::string();
+
+    HANDLE handle = CreateFileW(file.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                                OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (handle == INVALID_HANDLE_VALUE) return std::string();
+    DWORD size = GetFileSize(handle, nullptr);
+    std::string data(size, '\0');
+    DWORD read = 0;
+    ReadFile(handle, &data[0], size, &read, nullptr);
+    data.resize(read);
+    CloseHandle(handle);
+    DeleteFileW(file.c_str());
+    return data;
+}
+
+// 取 JSON 里第一个 "key": "value"
+static std::string JsonFirstString(const std::string& json, const std::string& key) {
+    for (const std::string& pattern : {std::string("\"" + key + "\":\""), std::string("\"" + key + "\": \"")}) {
+        size_t pos = json.find(pattern);
+        if (pos == std::string::npos) continue;
+        pos += pattern.size();
+        size_t end = json.find('"', pos);
+        if (end == std::string::npos) continue;
+        return json.substr(pos, end - pos);
+    }
+    return std::string();
+}
+
+// 版本号比较：远端比本地新返回 true
+static bool IsNewerVersion(const std::string& remote, const std::string& local) {
+    auto parse = [](const std::string& text) {
+        std::vector<int> parts;
+        size_t i = 0;
+        while (i < text.size()) {
+            if (isdigit((unsigned char)text[i])) {
+                int value = 0;
+                while (i < text.size() && isdigit((unsigned char)text[i])) {
+                    value = value * 10 + (text[i] - '0');
+                    ++i;
+                }
+                parts.push_back(value);
+            } else {
+                ++i;
+            }
+        }
+        return parts;
+    };
+    std::vector<int> a = parse(remote);
+    std::vector<int> b = parse(local);
+    size_t count = a.size() > b.size() ? a.size() : b.size();
+    for (size_t i = 0; i < count; ++i) {
+        int x = i < a.size() ? a[i] : 0;
+        int y = i < b.size() ? b[i] : 0;
+        if (x != y) return x > y;
+    }
+    return false;
+}
+
+static DWORD WINAPI UpdateCheckThread(LPVOID) {
+    Sleep(1500);  // 等界面先出来，不拖慢启动
+    double autoUpdate = 1;
+    if (g_config.GetNumber("autoUpdate", autoUpdate) && autoUpdate == 0) {
+        HostLog("自动更新已关闭");
+        return 0;
+    }
+
+    HostLog("正在检查更新 …");
+    std::string json = DownloadToString(L"https://api.github.com/repos/0anmuxi0/MIDI-Player/releases/latest");
+    if (json.empty()) {
+        HostLog("更新检查失败（网络不可达或已被限流）");
+        return 0;
+    }
+
+    std::string tag = JsonFirstString(json, "tag_name");
+    std::string url = JsonFirstString(json, "browser_download_url");
+    if (tag.empty() || url.empty()) {
+        HostLog("更新检查：无法解析版本信息");
+        return 0;
+    }
+
+    if (!IsNewerVersion(tag, WideToUtf8(APP_VERSION))) {
+        HostLog("已是最新版本（%ls）", APP_VERSION);
+        return 0;
+    }
+
+    HostLog("发现新版本 %s（当前 %ls）", tag.c_str(), APP_VERSION);
+    g_updateTag = Utf8ToWide(tag);
+    g_updateUrl = Utf8ToWide(url);
+    if (g_hwnd) PostMessageW(g_hwnd, WM_APP_UPDATE_FOUND, 0, 0);
+    return 0;
+}
+
+static DWORD WINAPI UpdateDownloadThread(LPVOID) {
+    wchar_t temp[MAX_PATH] = {0};
+    GetTempPathW(MAX_PATH, temp);
+    g_updatePath = std::wstring(temp) + L"MIDI-Player-Update.exe";
+    DeleteFileW(g_updatePath.c_str());
+
+    HostLog("开始下载更新 …");
+    HRESULT hr = URLDownloadToFileW(nullptr, g_updateUrl.c_str(), g_updatePath.c_str(), 0, nullptr);
+    bool ok = SUCCEEDED(hr) && GetFileAttributesW(g_updatePath.c_str()) != INVALID_FILE_ATTRIBUTES;
+    HostLog(ok ? "更新下载完成" : "更新下载失败");
+    if (g_hwnd) PostMessageW(g_hwnd, WM_APP_UPDATE_READY, ok ? 0 : 1, 0);
+    return 0;
+}
+
+// 用批处理等本进程退出后替换 exe 并重启
+static void ApplyUpdateAndRestart() {
+    wchar_t self[MAX_PATH] = {0};
+    GetModuleFileNameW(nullptr, self, MAX_PATH);
+    wchar_t temp[MAX_PATH] = {0};
+    GetTempPathW(MAX_PATH, temp);
+    std::wstring scriptPath = std::wstring(temp) + L"midi-player-update.cmd";
+
+    std::wstring script;
+    script += L"@echo off\r\n";
+    script += L"chcp 65001 >nul\r\n";
+    script += L":wait\r\n";
+    script += L"tasklist /fi \"IMAGENAME eq MIDI Player.exe\" 2>nul | find /i \"MIDI Player.exe\" >nul";
+    script += L" && (timeout /t 1 /nobreak >nul & goto wait)\r\n";
+    script += L"copy /y \"" + g_updatePath + L"\" \"" + std::wstring(self) + L"\" >nul\r\n";
+    script += L"start \"\" \"" + std::wstring(self) + L"\"\r\n";
+    script += L"del \"%~f0\"\r\n";
+
+    HANDLE handle = CreateFileW(scriptPath.c_str(), GENERIC_WRITE, 0, nullptr,
+                                CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (handle == INVALID_HANDLE_VALUE) {
+        HostLog("无法创建更新脚本");
+        MessageBoxW(g_hwnd, L"无法写入更新脚本，请到 Releases 页面手动下载。", kAppTitle, MB_ICONWARNING);
+        return;
+    }
+    int need = WideCharToMultiByte(CP_UTF8, 0, script.c_str(), (int)script.size(), nullptr, 0, nullptr, nullptr);
+    std::string utf8((size_t)need, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, script.c_str(), (int)script.size(), &utf8[0], need, nullptr, nullptr);
+    DWORD written = 0;
+    WriteFile(handle, utf8.data(), (DWORD)utf8.size(), &written, nullptr);
+    CloseHandle(handle);
+
+    HostLog("启动更新脚本并重启");
+    ShellExecuteW(nullptr, L"open", scriptPath.c_str(), nullptr, nullptr, SW_SHOWMINIMIZED);
+    DestroyWindow(g_hwnd);
+}
+
+// ---------------------------------------------------------------------------
 // 窗口
 // ---------------------------------------------------------------------------
 static std::wstring UserDataDir() {
@@ -556,6 +753,26 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 }
                 KillTimer(hwnd, 1);
                 InvalidateRect(hwnd, nullptr, TRUE);
+            }
+            return 0;
+        case WM_APP_UPDATE_FOUND: {
+            std::wstring text = L"发现新版本 " + g_updateTag + L"（当前 " APP_VERSION L"）。\n\n是否现在下载并更新？";
+            if (MessageBoxW(hwnd, text.c_str(), kAppTitle, MB_ICONINFORMATION | MB_YESNO) == IDYES) {
+                CreateThread(nullptr, 0, UpdateDownloadThread, nullptr, 0, nullptr);
+            }
+            return 0;
+        }
+        case WM_APP_UPDATE_READY:
+            if (wParam == 0) {
+                if (MessageBoxW(hwnd, L"更新已下载完成，是否立即重启以完成更新？", kAppTitle,
+                                MB_ICONQUESTION | MB_YESNO) == IDYES) {
+                    ApplyUpdateAndRestart();
+                } else {
+                    HostLog("用户推迟更新，安装包保留在 %ls", g_updatePath.c_str());
+                }
+            } else {
+                MessageBoxW(hwnd, L"更新下载失败。\n可以稍后重试，或到 Releases 页面手动下载。",
+                            kAppTitle, MB_ICONWARNING);
             }
             return 0;
         case WM_CLOSE:
@@ -629,7 +846,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
         if (selfCheck) {
             const char* required[] = {
                 "assets/index.html", "assets/Tone.js", "assets/midi",
-                "assets/app-icon.png", "assets/splash.html",
+                "assets/app-icon.png",
                 "soundfonts/FluidR3_GM/acoustic_grand_piano-mp3/C3.mp3",
                 "WebView2Loader.dll",
             };
@@ -651,8 +868,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
     }
 
     // 主题 + 图标（图标资源是 seticon.py 写入的 RT_GROUP_ICON，ID 为 1）
-    g_darkTheme = ResolveDarkTheme();
-    g_themeBg = g_darkTheme ? RGB(32, 32, 32) : RGB(243, 243, 243);
+    ApplyTheme(ResolveDarkTheme());
     g_appIconBig = (HICON)LoadImageW(instance, MAKEINTRESOURCEW(1), IMAGE_ICON, 132, 132, LR_DEFAULTCOLOR);
     g_appIconSmall = (HICON)LoadImageW(instance, MAKEINTRESOURCEW(1), IMAGE_ICON,
                                        GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR);
@@ -698,9 +914,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
     UpdateWindow(g_hwnd);
 
     // 标题栏跟随主题 + 应用图标（含任务栏）
-    BOOL darkMode = g_darkTheme ? TRUE : FALSE;
-    DwmSetWindowAttribute(g_hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &darkMode, sizeof(darkMode));
-    DwmSetWindowAttribute(g_hwnd, 19 /*旧版 Windows 10*/, &darkMode, sizeof(darkMode));
+    ApplyTheme(g_darkTheme);
     SendMessageW(g_hwnd, WM_SETICON, ICON_BIG, (LPARAM)g_appIconBig);
     SendMessageW(g_hwnd, WM_SETICON, ICON_SMALL, (LPARAM)g_appIconSmall);
     // 兜底：即使导航回调没回来，也在 4 秒后收起启动画面
@@ -715,6 +929,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
         return 1;
     }
     HostLog("已发起环境创建，进入消息循环");
+
+    // 启动后异步检查更新（网络操作放在后台线程，不拖慢启动）
+    CreateThread(nullptr, 0, UpdateCheckThread, nullptr, 0, nullptr);
 
     MSG msg;
     while (GetMessageW(&msg, nullptr, 0, 0)) {

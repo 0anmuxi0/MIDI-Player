@@ -83,3 +83,8 @@ extern const wchar_t* kAppTitle;
 extern const wchar_t* kRegistryPath;   // Software\MIDIPlayer
 extern const wchar_t* kRegistryValue;  // config
 extern const wchar_t* kVirtualHost;    // 前端页面使用的虚拟域名
+
+// 当前版本号（自动更新比较用；发版时同步修改，可用编译参数覆盖以便测试）
+#ifndef APP_VERSION
+#define APP_VERSION L"2.1.0"
+#endif
