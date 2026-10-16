@@ -89,17 +89,25 @@ pnpm build          # 产物输出到 ../assets（宿主的静态资源目录）
 ### 2. 宿主（生成单文件 exe）
 
 ```bash
-pwsh -File host/build.ps1
+powershell -ExecutionPolicy Bypass -File host\build.ps1
 # 产物：host/build/MIDI Player.exe（约 93 MB，音色已内置）
 ```
 
-脚本依次完成：编译宿主 → 用 Win32 `UpdateResource` 嵌入图标（该工具链没有 windres）
-→ 把前端产物、音色库与 `WebView2Loader.dll` 打成 zip 追加到 exe 尾部。
+> Windows 默认禁止运行 `.ps1`，所以要带 `-ExecutionPolicy Bypass`。
+> 或在当前会话里先执行 `Set-ExecutionPolicy -Scope Process Bypass`。
+
+脚本依次完成：
+
+1. 编译宿主（clang++，静态链接）
+2. 用 Win32 `UpdateResource` 嵌入图标 —— 该工具链没有 windres，所以走 P/Invoke
+3. 把**前端产物 + 音色库 + WebView2Loader.dll** 打成 zip，追加到 exe 尾部
+
+**整条构建链只用 PowerShell，不依赖 Python 或任何其它运行时。**
 
 ### 3. 校验
 
 ```bash
-"host/build/MIDI Player.exe" --selfcheck   # 校验资源包完整性，退出码 0 表示通过
+"host\build\MIDI Player.exe" --selfcheck   # 校验资源包完整性，退出码 0 表示通过
 ```
 
 ---
@@ -107,13 +115,13 @@ pwsh -File host/build.ps1
 ## 目录结构
 
 ```
-host/                    C++ / WebView2 宿主
+host/                    C++ / WebView2 宿主（构建脚本全为 PowerShell）
   main.cpp               窗口、WebView2、资源拦截、全屏、主题同步、自动更新
   payload.cpp            内嵌资源包（尾部 zip 解析）+ 注册表配置
   host.h                 公共声明与版本号 APP_VERSION
-  pack.py                生成资源包并追加到 exe 尾部
-  seticon.py             用 UpdateResource 嵌入图标
-  build.ps1              一键构建
+  build.ps1              一键构建（编译 → 嵌图标 → 打包）
+  pack.ps1               生成资源包并追加到 exe 尾部
+  seticon.ps1            用 UpdateResource 嵌入图标
 frontend/                前端源码
   src/App.vue            界面（WinUIonWeb 组件组合）
   src/app.css            布局与主题
@@ -121,10 +129,8 @@ frontend/                前端源码
   src/winui/             从 WinUIonWeb 复制来的组件与 theme.css
   public/                app-icon.png
 assets/                  前端构建产物（宿主静态资源目录）
-soundfonts/              音色库
+soundfonts/              音色库（打包时嵌入 exe）
 icon.ico                 应用图标（多尺寸）
-MIDI Player.py           历史实现（Python + Flask + pywebview），保留以备回退
-tools/pack_soundfonts.py 把音色库打成 zip（历史实现用）
 ```
 
 ---
