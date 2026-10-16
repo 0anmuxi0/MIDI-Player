@@ -311,6 +311,17 @@ function applyTheme(mode: 'light' | 'dark' | 'system', persist = true) {
     try { localStorage.setItem(THEME_KEY, mode) } catch (e) { }
   }
   player?.refreshTheme(mode)
+  notifyHostTheme(dark)
+}
+
+/** 通知宿主同步标题栏与窗口底色（仅 WebView2 宿主有效） */
+function notifyHostTheme(dark: boolean) {
+  try {
+    const bridge = (window as any).chrome?.webview
+    if (bridge && typeof bridge.postMessage === 'function') {
+      bridge.postMessage(JSON.stringify({ type: 'theme', dark }))
+    }
+  } catch (e) { }
 }
 
 function setTheme(value: unknown) {
