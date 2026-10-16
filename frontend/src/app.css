@@ -534,3 +534,26 @@ body.ui-ready .app-content > *:nth-child(6) {
     opacity: 0.9;
     background: var(--accent-base);
 }
+
+/* ==================== 更新对话框内的进度条 ==================== */
+.update-progress {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 16px;
+    width: 100%;
+}
+
+.update-progress .win-progress-bar {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.update-percent {
+    flex: 0 0 auto;
+    min-width: 46px;
+    text-align: right;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
+}

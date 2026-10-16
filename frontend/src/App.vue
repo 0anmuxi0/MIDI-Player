@@ -244,6 +244,26 @@
       <WinTextBlock class="status-line" :Text="status" />
       <WinTextBlock class="hint-line" Text="空格暂停 / 继续 ｜ R 重置 ｜ 支持拖拽导入" />
     </main>
+
+    <!-- 自动更新提示（页面内 WinUI 对话框，风格与界面一致）
+         注意：组件内部 Teleport 到 body，取不到 html 上的主题类，
+         所以要显式把主题传进去，否则遮罩会变全黑 -->
+    <WinContentDialog
+      :IsOpen="update.visible"
+      :Theme="isDark ? 'dark' : 'light'"
+      :Title="update.title"
+      :PrimaryButtonText="update.primaryText"
+      :CloseButtonText="update.closeText"
+      :IsPrimaryButtonEnabled="update.primaryEnabled"
+      DefaultButton="Primary"
+      @PrimaryButtonClick="onUpdatePrimary"
+      @CloseButtonClick="onUpdateDismiss">
+      <WinTextBlock :Text="update.message" TextWrapping="Wrap" />
+      <div v-if="update.showProgress" class="update-progress">
+        <WinProgressBar :Value="update.percent" :Maximum="100" />
+        <WinTextBlock class="update-percent" :Text="update.percent + '%'" />
+      </div>
+    </WinContentDialog>
   </div>
 </template>
 
@@ -251,6 +271,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import WinTextBlock from './winui/components/WinTextBlock.vue'
 import WinButton from './winui/components/WinButton.vue'
+import WinContentDialog from './winui/components/WinContentDialog.vue'
 import WinSlider from './winui/components/WinSlider.vue'
 import WinProgressBar from './winui/components/WinProgressBar.vue'
 import WinToggleSwitch from './winui/components/WinToggleSwitch.vue'
@@ -322,6 +343,112 @@ function notifyHostTheme(dark: boolean) {
       bridge.postMessage(JSON.stringify({ type: 'theme', dark }))
     }
   } catch (e) { }
+}
+
+/* ---------------- 自动更新（对话框由页面渲染，风格与界面一致） ---------------- */
+type UpdateStage = 'idle' | 'available' | 'downloading' | 'ready' | 'failed'
+const update = ref({
+  visible: false,
+  stage: 'idle' as UpdateStage,
+  version: '',
+  title: '',
+  message: '',
+  primaryText: '',
+  closeText: '',
+  primaryEnabled: true,
+  showProgress: false,
+  percent: 0
+})
+
+function hostPost(payload: Record<string, unknown>) {
+  try {
+    const bridge = (window as any).chrome?.webview
+    if (bridge && typeof bridge.postMessage === 'function') bridge.postMessage(JSON.stringify(payload))
+  } catch (e) { }
+}
+
+function showUpdateAvailable(version: string, current: string) {
+  update.value = {
+    visible: true,
+    stage: 'available',
+    version,
+    title: '发现新版本',
+    message: `新版本 ${version} 已发布（当前 ${current}）。是否现在下载并更新？`,
+    primaryText: '下载并更新',
+    closeText: '稍后',
+    primaryEnabled: true,
+    showProgress: false,
+    percent: 0
+  }
+}
+
+function showUpdateProgress(percent: number) {
+  const stage = update.value.stage
+  if (stage !== 'downloading' && stage !== 'available') return
+  update.value.stage = 'downloading'
+  update.value.title = '正在下载更新'
+  update.value.message = `正在下载新版本 ${update.value.version}，请保持程序开启。`
+  update.value.primaryText = '下载中…'
+  update.value.closeText = '后台下载'
+  update.value.primaryEnabled = false
+  update.value.showProgress = true
+  update.value.percent = Math.max(0, Math.min(100, percent))
+}
+
+function showUpdateReady(version: string) {
+  update.value = {
+    visible: true,
+    stage: 'ready',
+    version,
+    title: '更新已就绪',
+    message: `新版本 ${version} 已下载完成。重启后即可使用，是否立即重启？`,
+    primaryText: '立即重启',
+    closeText: '稍后重启',
+    primaryEnabled: true,
+    showProgress: false,
+    percent: 100
+  }
+}
+
+function showUpdateFailed(version: string) {
+  update.value = {
+    visible: true,
+    stage: 'failed',
+    version,
+    title: '更新下载失败',
+    message: '下载没有完成，请检查网络后重试，或前往 Releases 页面手动下载。',
+    primaryText: '重试',
+    closeText: '关闭',
+    primaryEnabled: true,
+    showProgress: false,
+    percent: 0
+  }
+}
+
+function onUpdatePrimary() {
+  const stage = update.value.stage
+  if (stage === 'available' || stage === 'failed') {
+    // 先切到下载中，等宿主回传真实进度
+    showUpdateProgress(0)
+    hostPost({ type: 'update-download' })
+  } else if (stage === 'ready') {
+    hostPost({ type: 'update-restart' })
+  }
+}
+
+function onUpdateDismiss() {
+  update.value.visible = false
+}
+
+function onHostUpdateMessage(event: Event) {
+  const payload = (event as CustomEvent).detail
+  if (!payload || typeof payload.type !== 'string') return
+  switch (payload.type) {
+    case 'update-available': showUpdateAvailable(payload.version, payload.current); break
+    case 'update-progress': showUpdateProgress(payload.percent); break
+    case 'update-downloaded': showUpdateReady(payload.version); break
+    case 'update-failed': showUpdateFailed(payload.version); break
+  }
 }
 
 function setTheme(value: unknown) {
@@ -561,6 +688,7 @@ function setDirection(value: unknown) {
 
 /* ---------------- 生命周期 ---------------- */
 let systemDarkRemoval: (() => void) | null = null
+let hostUpdateRemoval: (() => void) | null = null
 
 onMounted(() => {
   let stored: string | null = null
@@ -573,6 +701,10 @@ onMounted(() => {
   systemThemeQuery = window.matchMedia('(prefers-color-scheme: dark)')
   systemThemeQuery.addEventListener('change', onSystemThemeChange)
   systemDarkRemoval = () => systemThemeQuery?.removeEventListener('change', onSystemThemeChange)
+
+  // 接收宿主的自动更新消息（走 DOM 自定义事件）
+  window.addEventListener('host-update', onHostUpdateMessage as EventListener)
+  hostUpdateRemoval = () => window.removeEventListener('host-update', onHostUpdateMessage as EventListener)
 
   onStateReady()
 
@@ -597,6 +729,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   systemDarkRemoval?.()
+  hostUpdateRemoval?.()
   player?.destroy()
   player = null
 })

@@ -48,6 +48,10 @@ static bool g_fullscreen = false;
 static RECT g_windowedRect{};
 static DWORD g_windowedStyle = 0;
 
+// 自动更新相关的前置声明（窗口消息处理里会用到）
+static DWORD WINAPI UpdateDownloadThread(LPVOID);
+static void ApplyUpdateAndRestart();
+
 // 启动画面（WebView2 就绪前由 GDI 直接绘制应用图标）
 static HICON g_appIconBig = nullptr;
 static HICON g_appIconSmall = nullptr;
@@ -437,6 +441,16 @@ class WebMessageHandler : public Callback<ICoreWebView2WebMessageReceivedEventHa
             if (message.find("ui-ready") != std::string::npos) {
                 HostLog("页面已开始播放入场动画");
             }
+            // 页面点了「下载更新」
+            if (message.find("update-download") != std::string::npos) {
+                HostLog("用户确认下载更新");
+                CreateThread(nullptr, 0, UpdateDownloadThread, nullptr, 0, nullptr);
+            }
+            // 页面点了「立即重启」
+            if (message.find("update-restart") != std::string::npos) {
+                HostLog("用户确认重启以完成更新");
+                ApplyUpdateAndRestart();
+            }
             // 页面切换主题：立即同步标题栏与窗口底色，无需重启
             if (message.find("\"type\":\"theme\"") != std::string::npos) {
                 bool dark = message.find("\"dark\":true") != std::string::npos;
@@ -554,13 +568,27 @@ public:
 
 // ---------------------------------------------------------------------------
 // 自动更新：检查 GitHub Releases，下载后由批处理替换自身并重启
+//
+// 所有提示都走页面内的 WinUI 对话框（宿主只负责发消息），
+// 这样风格和界面统一，也不会出现系统原生 MessageBox 那种割裂感。
 // ---------------------------------------------------------------------------
 #define WM_APP_UPDATE_FOUND (WM_APP + 1)
 #define WM_APP_UPDATE_READY (WM_APP + 2)
+#define WM_APP_UPDATE_PROGRESS (WM_APP + 3)
 
 static std::wstring g_updateUrl;
 static std::wstring g_updateTag;
 static std::wstring g_updatePath;
+
+// 向页面推送一条更新状态消息（JSON 字符串）
+// 用普通 DOM 自定义事件投递，页面监听 'host-update' 即可，不依赖 chrome.webview 消息通道
+static void PostUpdateMessage(const std::wstring& json) {
+    if (!g_webview) return;
+    std::wstring script = L"(function(){try{window.dispatchEvent(new CustomEvent('host-update',{detail:";
+    script += json;
+    script += L"}));}catch(e){}})();";
+    g_webview->ExecuteScript(script.c_str(), nullptr);
+}
 
 // 把 URL 内容下载成字符串（走 urlmon，自动处理 TLS）
 static std::string DownloadToString(const std::wstring& url) {
@@ -660,6 +688,50 @@ static DWORD WINAPI UpdateCheckThread(LPVOID) {
     return 0;
 }
 
+// 下载进度回调：把百分比回传给窗口线程
+class DownloadProgress : public IBindStatusCallback {
+public:
+    ULONG ref_ = 1;
+    DWORD lastPercent_ = 0xFFFFFFFF;
+
+    virtual ~DownloadProgress() = default;
+
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
+        if (!ppv) return E_POINTER;
+        if (riid == IID_IUnknown || riid == __uuidof(IBindStatusCallback)) {
+            *ppv = static_cast<IBindStatusCallback*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *ppv = nullptr;
+        return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return InterlockedIncrement(&ref_); }
+    ULONG STDMETHODCALLTYPE Release() override {
+        ULONG left = InterlockedDecrement(&ref_);
+        if (left == 0) delete this;
+        return left;
+    }
+
+    HRESULT STDMETHODCALLTYPE OnStartBinding(DWORD, IBinding*) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE GetPriority(LONG*) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE OnLowResource(DWORD) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE OnProgress(ULONG progress, ULONG total, ULONG, LPCWSTR) override {
+        if (total > 0 && g_hwnd) {
+            DWORD percent = (DWORD)((uint64_t)progress * 100 / total);
+            if (percent != lastPercent_) {
+                lastPercent_ = percent;
+                PostMessageW(g_hwnd, WM_APP_UPDATE_PROGRESS, (WPARAM)percent, 0);
+            }
+        }
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE OnStopBinding(HRESULT, LPCWSTR) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE GetBindInfo(DWORD* /*grfBINDF*/, BINDINFO* /*pbindinfo*/) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE OnDataAvailable(DWORD, DWORD, FORMATETC*, STGMEDIUM*) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE OnObjectAvailable(REFIID, IUnknown*) override { return S_OK; }
+};
+
 static DWORD WINAPI UpdateDownloadThread(LPVOID) {
     wchar_t temp[MAX_PATH] = {0};
     GetTempPathW(MAX_PATH, temp);
@@ -667,13 +739,15 @@ static DWORD WINAPI UpdateDownloadThread(LPVOID) {
     DeleteFileW(g_updatePath.c_str());
 
     HostLog("开始下载更新 …");
-    HRESULT hr = URLDownloadToFileW(nullptr, g_updateUrl.c_str(), g_updatePath.c_str(), 0, nullptr);
+    DownloadProgress* progress = new DownloadProgress();
+    HRESULT hr = URLDownloadToFileW(nullptr, g_updateUrl.c_str(), g_updatePath.c_str(), 0, progress);
+    progress->Release();
+
     bool ok = SUCCEEDED(hr) && GetFileAttributesW(g_updatePath.c_str()) != INVALID_FILE_ATTRIBUTES;
     HostLog(ok ? "更新下载完成" : "更新下载失败");
     if (g_hwnd) PostMessageW(g_hwnd, WM_APP_UPDATE_READY, ok ? 0 : 1, 0);
     return 0;
 }
-
 // 用批处理等本进程退出后替换 exe 并重启
 static void ApplyUpdateAndRestart() {
     wchar_t self[MAX_PATH] = {0};
@@ -755,24 +829,20 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 InvalidateRect(hwnd, nullptr, TRUE);
             }
             return 0;
-        case WM_APP_UPDATE_FOUND: {
-            std::wstring text = L"发现新版本 " + g_updateTag + L"（当前 " APP_VERSION L"）。\n\n是否现在下载并更新？";
-            if (MessageBoxW(hwnd, text.c_str(), kAppTitle, MB_ICONINFORMATION | MB_YESNO) == IDYES) {
-                CreateThread(nullptr, 0, UpdateDownloadThread, nullptr, 0, nullptr);
-            }
+        case WM_APP_UPDATE_FOUND:
+            // 提示交给页面用 WinUI 对话框显示（宿主不弹系统框）
+            PostUpdateMessage(L"{\"type\":\"update-available\",\"version\":\"" + g_updateTag +
+                              L"\",\"current\":\"" APP_VERSION L"\"}");
             return 0;
-        }
+        case WM_APP_UPDATE_PROGRESS:
+            PostUpdateMessage(L"{\"type\":\"update-progress\",\"percent\":" +
+                              std::to_wstring((int)wParam) + L"}");
+            return 0;
         case WM_APP_UPDATE_READY:
             if (wParam == 0) {
-                if (MessageBoxW(hwnd, L"更新已下载完成，是否立即重启以完成更新？", kAppTitle,
-                                MB_ICONQUESTION | MB_YESNO) == IDYES) {
-                    ApplyUpdateAndRestart();
-                } else {
-                    HostLog("用户推迟更新，安装包保留在 %ls", g_updatePath.c_str());
-                }
+                PostUpdateMessage(L"{\"type\":\"update-downloaded\",\"version\":\"" + g_updateTag + L"\"}");
             } else {
-                MessageBoxW(hwnd, L"更新下载失败。\n可以稍后重试，或到 Releases 页面手动下载。",
-                            kAppTitle, MB_ICONWARNING);
+                PostUpdateMessage(L"{\"type\":\"update-failed\",\"version\":\"" + g_updateTag + L"\"}");
             }
             return 0;
         case WM_CLOSE:
