@@ -1,4 +1,4 @@
-// ============================================================================
+﻿// ============================================================================
 //  MIDI 可视化播放器 —— C++ / WebView2 宿主
 // ============================================================================
 #include "host.h"
@@ -929,14 +929,7 @@ public:
 };
 
 static DWORD WINAPI UpdateDownloadThread(LPVOID) {
-    // 更新包路径：优先 LOCALAPPDATA（必定可写），其次 TEMP
-    wchar_t dir[MAX_PATH] = {0};
-    if (GetEnvironmentVariableW(L"LOCALAPPDATA", dir, MAX_PATH) == 0) {
-        if (!GetTempPathW(MAX_PATH, dir)) dir[0] = 0;
-    }
-    std::wstring base = dir;
-    if (!base.empty() && base.back() != L'\\') base += L'\\';
-    g_updatePath = base + L"MIDI-Player-Update.exe";
+    g_updatePath = HostDataDir() + L"MIDI-Player-Update.exe";
     DeleteFileW(g_updatePath.c_str());
 
     HostLog("开始下载更新（多线程）…");
@@ -956,9 +949,30 @@ static DWORD WINAPI UpdateDownloadThread(LPVOID) {
     HANDLE file = CreateFileW(g_updatePath.c_str(), GENERIC_WRITE, 0, nullptr,
                               CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file == INVALID_HANDLE_VALUE) {
-        HostLog("无法创建更新文件: %ls", g_updatePath.c_str());
+        // 分块下载需要预分配文件；建不出来就整包回退，保证一定能更新
+        HostLog("无法创建更新文件，回退单线程（路径: %ls）", g_updatePath.c_str());
         g_dlDiag = 3;
-        if (g_hwnd) PostMessageW(g_hwnd, WM_APP_UPDATE_READY, 1, 0);
+        g_downloadTotal = 100;
+        g_chunkCount = 1;
+        EnterCriticalSection(&g_chunkCs);
+        g_chunks[0].start = 0;
+        g_chunks[0].end = 100;
+        g_chunks[0].received = 0;
+        g_chunks[0].status = 1;
+        LeaveCriticalSection(&g_chunkCs);
+
+        SimpleProgress* fallback = new SimpleProgress();
+        HRESULT hr = URLDownloadToFileW(nullptr, g_updateUrl.c_str(), g_updatePath.c_str(), 0, fallback);
+        fallback->Release();
+        bool ok = SUCCEEDED(hr) && GetFileAttributesW(g_updatePath.c_str()) != INVALID_FILE_ATTRIBUTES;
+        EnterCriticalSection(&g_chunkCs);
+        g_chunks[0].status = ok ? 2 : 3;
+        if (ok) g_chunks[0].received = 100;
+        LeaveCriticalSection(&g_chunkCs);
+        ReportDownloadProgress();
+        g_dlDiag = ok ? 10 : 11;
+        HostLog(ok ? "更新下载完成（回退）" : "更新下载失败");
+        if (g_hwnd) PostMessageW(g_hwnd, WM_APP_UPDATE_READY, ok ? 0 : 1, 0);
         return 0;
     }
     if (totalSize > 0) {
@@ -1044,13 +1058,7 @@ static DWORD WINAPI UpdateDownloadThread(LPVOID) {
 static void ApplyUpdateAndRestart() {
     wchar_t self[MAX_PATH] = {0};
     GetModuleFileNameW(nullptr, self, MAX_PATH);
-    wchar_t dir[MAX_PATH] = {0};
-    if (GetEnvironmentVariableW(L"LOCALAPPDATA", dir, MAX_PATH) == 0) {
-        if (!GetTempPathW(MAX_PATH, dir)) dir[0] = 0;
-    }
-    std::wstring dirText = dir;
-    if (!dirText.empty() && dirText.back() != L'\\') dirText += L'\\';
-    std::wstring scriptPath = dirText + L"midi-player-update.cmd";
+    std::wstring scriptPath = HostDataDir() + L"midi-player-update.cmd";
 
     std::wstring script;
     script += L"@echo off\r\n";
@@ -1211,6 +1219,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, LPWSTR, int) {
             std::wstring url = L"https://github.com/0anmuxi0/MIDI-Player/releases/latest/download/MIDI.Player.exe";
             if (argc >= 3) url = argv[2];
             if (argv) LocalFree(argv);
+            CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
             g_updateUrl = url;
             if (!g_chunkCsReady) {
                 InitializeCriticalSection(&g_chunkCs);

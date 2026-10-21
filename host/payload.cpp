@@ -1,9 +1,10 @@
-// ============================================================================
+﻿// ============================================================================
 //  内嵌资源包（zip 追加在 exe 尾部）+ 注册表配置
 // ============================================================================
 #include "host.h"
 
 #include <shlwapi.h>
+#include <shlobj.h>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -42,22 +43,35 @@ std::wstring Utf8ToWide(const std::string& value) {
 // ---------------------------------------------------------------------------
 // 日志
 // ---------------------------------------------------------------------------
-void HostLog(const char* format, ...) {
-    // 优先用 LOCALAPPDATA，其次 TEMP，最后 exe 所在目录
-    wchar_t dir[MAX_PATH] = {0};
-    if (GetEnvironmentVariableW(L"LOCALAPPDATA", dir, MAX_PATH) == 0) {
-        if (!GetTempPathW(MAX_PATH, dir)) {
-            GetModuleFileNameW(nullptr, dir, MAX_PATH);
-            std::wstring self(dir);
-            size_t pos = self.find_last_of(L'\\');
-            if (pos == std::wstring::npos) return;
-            std::wstring folder = self.substr(0, pos);
-            if (folder.size() >= MAX_PATH) return;
-            wcsncpy(dir, folder.c_str(), MAX_PATH - 1);
-            dir[MAX_PATH - 1] = 0;
-        }
+// 可写数据目录：优先 SHGetKnownFolderPath（不依赖环境变量），
+// 其次环境变量，最后 exe 所在目录。返回带尾部反斜杠的路径。
+std::wstring HostDataDir() {
+    std::wstring result;
+    wchar_t known[MAX_PATH] = {0};
+    if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA | CSIDL_FLAG_CREATE, nullptr, 0, known))) {
+        result = known;
     }
-    std::wstring path = std::wstring(dir) + L"\\midi-player-host.log";
+    if (result.empty()) {
+        wchar_t dir[MAX_PATH] = {0};
+        if (GetEnvironmentVariableW(L"LOCALAPPDATA", dir, MAX_PATH) == 0) {
+            if (!GetTempPathW(MAX_PATH, dir)) dir[0] = 0;
+        }
+        result = dir;
+    }
+    if (result.empty()) {
+        wchar_t self[MAX_PATH] = {0};
+        GetModuleFileNameW(nullptr, self, MAX_PATH);
+        std::wstring module(self);
+        size_t pos = module.find_last_of(L'\\');
+        if (pos != std::wstring::npos) result = module.substr(0, pos);
+    }
+    if (!result.empty() && result.back() != L'\\') result += L'\\';
+    return result;
+}
+
+void HostLog(const char* format, ...) {
+    std::wstring path = HostDataDir() + L"midi-player-host.log";
+    if (path.size() < 5) return;
 
     char buffer[2048];
     va_list args;

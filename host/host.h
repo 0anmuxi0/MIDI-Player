@@ -1,4 +1,4 @@
-// ============================================================================
+﻿// ============================================================================
 //  MIDI 可视化播放器 —— C++ / WebView2 宿主（公共声明）
 //
 //  用原生宿主替代 Python + Flask + pywebview：
@@ -23,6 +23,9 @@ std::string WideToUtf8(const std::wstring& value);
 std::wstring Utf8ToWide(const std::string& value);
 
 // ---------------- 日志（写 %TEMP%\midi-player-host.log） ----------------
+// 返回可写的数据目录（%LOCALAPPDATA%，带尾部反斜杠；不依赖环境变量）
+std::wstring HostDataDir();
+
 void HostLog(const char* format, ...);
 
 // ---------------- 内嵌资源包 ----------------
@@ -86,5 +89,5 @@ extern const wchar_t* kVirtualHost;    // 前端页面使用的虚拟域名
 
 // 当前版本号（自动更新比较用；发版时同步修改，可用编译参数覆盖以便测试）
 #ifndef APP_VERSION
-#define APP_VERSION L"2.1.0"
+#define APP_VERSION L"2.2.0"
 #endif
